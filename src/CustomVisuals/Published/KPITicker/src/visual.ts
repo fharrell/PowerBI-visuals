@@ -24,9 +24,9 @@
  *  THE SOFTWARE.
  */
 module powerbi.extensibility.visual {
-    import ValueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
+    import valueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
     import IValueFormatter = powerbi.extensibility.utils.formatting.IValueFormatter;
-    export class KPITicker implements IVisual {
+    export class Visual implements IVisual {
         // stores the entire data that is selected by the user
         private static oData: DataViewTableRow[];
         // stores the index of data which is to be added next
@@ -154,6 +154,9 @@ module powerbi.extensibility.visual {
         private static iMaxPriceChangeValueWidth: number;
         private static iMaxDeltaWidth: number;
 
+        // rendering events api
+        private events: IVisualEventService ;
+
         /*
         * Creates instance of KPIIndicator. This method is only called once.
         * @param {VisualConstructorOptions} options - Contains references to the element that will
@@ -167,6 +170,8 @@ module powerbi.extensibility.visual {
             d3.select(options.element).append('div').attr('id', 'scrollArrows');
             d3.select('body').style('overflow', 'auto');
 
+            this.events = options.host.eventService;
+
         }
         /*
         * function to updates the state of the visual. Every sequential databinding and resize will call update.
@@ -176,114 +181,44 @@ module powerbi.extensibility.visual {
         */
         // tslint:disable-next-line:cyclomatic-complexity
         public update(options: VisualUpdateOptions): void {
-
+            this.events.renderingStarted(options);
             const kpiName: string = 'kpiName';
             const kpiCurrentValue: string = 'kpiCurrentValue';
             const kpiLastValue: string = 'kpiLastValue';
             const kpiStatus: string = 'kpiStatus';
             const kpiPositiveThresholdValue: string = 'kpiPositiveThresholdValue';
             const kpiNegativeThresholdValue: string = 'kpiNegativeThresholdValue';
-            KPITicker.dynamicWidth = options.viewport.width;
-            KPITicker.dynamicHeight = options.viewport.height;
-
+            let padding = 5;
+            Visual.dynamicWidth = options.viewport.width - padding;
+            Visual.dynamicHeight = options.viewport.height;
             //clear interval and timeout when update is called
-            if (KPITicker.iInterval !== -1) {
-                window.clearTimeout(KPITicker.iInterval);
+            if (Visual.iInterval !== -1) {
+                window.clearTimeout(Visual.iInterval);
             }
-            if (KPITicker.iTimeout !== -1) {
-                window.clearTimeout(KPITicker.iTimeout);
+            if (Visual.iTimeout !== -1) {
+                window.clearTimeout(Visual.iTimeout);
             }
-
             // check if basic requirements are satisfied else return
             if (options.dataViews.length === 0 || !options.dataViews[0].categorical ||
                 ((!options.dataViews[0].categorical.values))) {
-                KPITicker.displayBasicRequirement(1);
-
+                Visual.displayBasicRequirement(1);
                 return;
             }
             if ((!options.dataViews[0].categorical.categories)) {
-                KPITicker.displayBasicRequirement(4);
-
+                Visual.displayBasicRequirement(4);
                 return;
             }
-            // initializing KPITicker.iCurrentPosition to zero
-            KPITicker.iCurrentPosition = 0;
-            // to pass dataView as a parameter when formatting options are choosen
-            KPITicker.oDataView = options.dataViews[0];
-            let oDataCategorical: DataViewCategorical;
-            oDataCategorical = KPITicker.oDataView.categorical;
-            let iNumberOfValues: number;
-            iNumberOfValues = oDataCategorical.values.length;
-            let iNumberOfCategories: number;
-            iNumberOfCategories = oDataCategorical.categories.length;
-            let iIndex: number = 0;
+            // initializing Visual.iCurrentPosition to zero
+            Visual.iCurrentPosition = 0;
 
-            // initializing the KPITIcker.iIndexOfName, KPITIcker.iIndexOfStatus,
-            //KPITIcker.iIndexOfLastValue,KPITIcker.iIndexOfCurrentValue to -1 so that
-            //if they are not selected by user the value corresponding to them is not displayed
-            KPITicker.iIndexOfName = -1;
-            KPITicker.iIndexOfStatus = -1;
-            KPITicker.iIndexOfLastValue = -1;
-            KPITicker.iIndexOfCurrentValue = -1;
-            KPITicker.iPositiveThresholdValue = -1;
-            KPITicker.iNegativeThresholdValue = -1;
-
-            // assigning proper index for category KPI Name
-            for (iIndex = 0; iIndex < iNumberOfCategories; iIndex++) {
-                if (oDataCategorical.categories[iIndex].source.roles[kpiName]) {
-                    KPITicker.iIndexOfName = iIndex;
-                    break;
-                }
-            }
-            // assigning proper index for measures
-            for (iIndex = 0; iIndex < iNumberOfValues; iIndex++) {
-                // assigning index for measure KPI Current Value
-                if (oDataCategorical.values[iIndex].source.roles[kpiCurrentValue]) {
-                    KPITicker.iIndexOfCurrentValue = iIndex;
-                } else if (oDataCategorical.values[iIndex].source.roles[kpiLastValue]) { // assigning index for measure KPI Last Value
-                    KPITicker.iIndexOfLastValue = iIndex;
-                } else if (oDataCategorical.values[iIndex].source.roles[kpiStatus]) { // assigning index for measure KPI Status
-                    KPITicker.iIndexOfStatus = iIndex;
-                    // assigning index for measure KPI Positive Threshold
-                } else if (oDataCategorical.values[iIndex].source.roles[kpiPositiveThresholdValue]) {
-                    KPITicker.iPositiveThresholdValue = iIndex;
-                    // assigning index for measure KPI Negative Threshold
-                } else if (oDataCategorical.values[iIndex].source.roles[kpiNegativeThresholdValue]) {
-                    KPITicker.iNegativeThresholdValue = iIndex;
-                }
-            }
-            // if KPI current value or KPI name is not selected
-            if (KPITicker.iIndexOfCurrentValue === -1 || KPITicker.iIndexOfName === -1) {
-                KPITicker.displayBasicRequirement(1);
-
+            if(Visual.appendIndex(options,kpiName,kpiCurrentValue,kpiLastValue,kpiStatus,kpiPositiveThresholdValue,kpiNegativeThresholdValue)) {
                 return;
-            }
-            //if status, Positive Threshold Data bag and Negative Threshold Data Bag were selected
-            if (KPITicker.iIndexOfStatus !== -1 && (KPITicker.iPositiveThresholdValue !== -1 || KPITicker.iNegativeThresholdValue !== -1)) {
-                KPITicker.displayBasicRequirement(3);
-
-                return;
-            }
-            // if status column has values other than -1,0 and 1
-            if (KPITicker.iIndexOfStatus !== -1) {
-                let oStatusData: PrimitiveValue[];
-                oStatusData = KPITicker.oDataView.categorical.values[KPITicker.iIndexOfStatus].values;
-                let iLengthOfData: number;
-                iLengthOfData = oStatusData.length;
-                for (iIndex = 0; iIndex < iLengthOfData; iIndex++) {
-                    if (oStatusData[iIndex] === null || !(oStatusData[iIndex] === 1 ||
-                        oStatusData[iIndex] === -1 || oStatusData[iIndex] === 0)) {
-                        KPITicker.displayBasicRequirement(2);
-
-                        return;
-                    }
-                }
             }
             // storing all the data in one variable
-            const len: number = KPITicker.oDataView.categorical.categories[0].values.length;
-            const categoriesLength: number = KPITicker.oDataView.categorical.categories.length;
-            const valuesLength: number = KPITicker.oDataView.categorical.values.length;
-            const cLength: number = KPITicker.oDataView.metadata.columns.length;
+            const len: number = Visual.oDataView.categorical.categories[0].values.length;
+            const categoriesLength: number = Visual.oDataView.categorical.categories.length;
+            const valuesLength: number = Visual.oDataView.categorical.values.length;
+            const cLength: number = Visual.oDataView.metadata.columns.length;
             let iRow: number;
             let iColumn: number;
             let kIterator: number = 0;
@@ -294,364 +229,467 @@ module powerbi.extensibility.visual {
                 data[iRow] = [];
                 kIterator = 0, jIterator = 0;
                 for (iColumn = 0; iColumn < cLength; iColumn++) {
-                    if (KPITicker.oDataView.metadata.columns[iColumn].isMeasure === true) {
-                        data[iRow][iColumn] = KPITicker.oDataView.categorical.values[kIterator++].values[iRow];
+                    if (Visual.oDataView.metadata.columns[iColumn].isMeasure === true) {
+                        data[iRow][iColumn] = Visual.oDataView.categorical.values[kIterator++].values[iRow];
                     } else {
-                        data[iRow][iColumn] = KPITicker.oDataView.categorical.categories[jIterator++].values[iRow];
+                        data[iRow][iColumn] = Visual.oDataView.categorical.categories[jIterator++].values[iRow];
                     }
                 }
             }
 
-            KPITicker.oData = data;
-            // empty the main div when update is called
-            $('#wrapper').empty();
-            $('#scrollArrows').empty();
-
-            let iDivStart: number;
-            iDivStart = 1;
-            // The number of containers. Possible values 1,2,3,4
-            KPITicker.iNumberOfKPI = KPITicker.getValue<number>(KPITicker.oDataView, 'configuration', 'numberOfKPI', 4);
-            // convert KPI count to integer if it is in decimal
-            if (KPITicker.iNumberOfKPI % 1 !== 0) {
-                KPITicker.iNumberOfKPI -= KPITicker.iNumberOfKPI % 1;
-            }
-            if (KPITicker.iNumberOfKPI > KPITicker.iMaxKPICount) {
-                KPITicker.iNumberOfKPI = KPITicker.iMaxKPICount;
-            } else if (KPITicker.iNumberOfKPI < KPITicker.iMinKPICount) {
-                KPITicker.iNumberOfKPI = KPITicker.iMinKPICount;
-            }
-            if (KPITicker.oData.length < KPITicker.iNumberOfKPI) {
-                KPITicker.iNumberOfKPI = KPITicker.oData.length;
-            }
-            // if KPITicker.iNumberOfKPI is still 0 that means there is no data after filters are applied
-            if (KPITicker.iNumberOfKPI === 0) {
-                KPITicker.displayBasicRequirement(0);
-
+            if(Visual.normalize(data)){
                 return;
             }
-            // The font size of containers. We are normalizing it to be 15 at max as height is not changeable
-            KPITicker.iNameFontSize = KPITicker.getValue<number>(KPITicker.oDataView, 'name', 'fontSize', 14);
-            // Restrict max font size to 14
-            if (KPITicker.iNameFontSize > 25) {
-                KPITicker.iNameFontSize = 25;
-            }
-            KPITicker.iValueFontSize = KPITicker.getValue<number>(KPITicker.oDataView, 'value', 'fontSize', 14);
-            // Restrict max font size to 14
-            if (KPITicker.iValueFontSize > 25) {
-                KPITicker.iValueFontSize = 25;
-            }
-
-            // Status of show change percentage
-            KPITicker.iEnableDelta = KPITicker.getValue<number>(KPITicker.oDataView, 'configuration', 'enableDelta', 0);
-            // Carousel feature to be on or off
-            KPITicker.iNoOfTiles = KPITicker.oDataView.categorical.categories[0].values.length / KPITicker.iNumberOfKPI;
-            if (KPITicker.iNoOfTiles > 1) {
-                KPITicker.iShowCarousel = KPITicker.getValue<boolean>(KPITicker.oDataView, 'carousel', 'show', false);
-            } else {
-                KPITicker.iShowCarousel = false;
-            }
-            // Animation feature to be on or off
-            if (KPITicker.iNoOfTiles > 1) {
-                KPITicker.iShowAnimation = KPITicker.getValue<boolean>(KPITicker.oDataView, 'animation', 'show', true);
-            } else {
-                KPITicker.iShowAnimation = false;
-            }
-
-            // Change the scrolling to horizontal
-            KPITicker.iHorizontalScroll = KPITicker.getValue<boolean>(KPITicker.oDataView, 'animation', 'horizontalScroll', false);
-            if (KPITicker.iHorizontalScroll) {
-                KPITicker.iVerticalScroll = false;
-            } else {
-                KPITicker.iVerticalScroll = true;
-            }
-            // Change the stacking to vertical
-            KPITicker.iVerticalStack = KPITicker.getValue<boolean>(KPITicker.oDataView, 'animation', 'verticalStack', false);
-            if (KPITicker.iVerticalStack) {
-                KPITicker.iHorizontalStack = false;
-            } else {
-                KPITicker.iHorizontalStack = true;
-            }
-            // Display units and decimal places for values
-            KPITicker.iDisplayUnits = KPITicker.getValue<number>(KPITicker.oDataView, 'value', 'displayUnits', 0);
-            KPITicker.iDecimalPlaces = KPITicker.getValue<number>(KPITicker.oDataView, 'value', 'decimalPlaces', 0);
-            // Allowed decimal places from 0 to 4 only
-            if (KPITicker.iDecimalPlaces > 4) {
-                KPITicker.iDecimalPlaces = 4;
-            } else if (KPITicker.iDecimalPlaces < 0) {
-                KPITicker.iDecimalPlaces = 0;
-            } else {
-                // tslint:disable-next-line:no-bitwise
-                KPITicker.iDecimalPlaces = ~~KPITicker.iDecimalPlaces;
-            }
-
-            // The font color of Name and Value
-            KPITicker.iValueFontColor = KPITicker.getFill(KPITicker.oDataView, 'valueFontColor');
-            KPITicker.iNameFontColor = KPITicker.getFill(KPITicker.oDataView, 'nameFontColor');
-
-            // The font family of Name and Value
-            KPITicker.iNameFontFamily = KPITicker.getValue<string>(KPITicker.oDataView, 'name', 'fontFamily', 'Segoe UI');
-            KPITicker.iValueFontFamily = KPITicker.getValue<string>(KPITicker.oDataView, 'value', 'fontFamily', 'Segoe UI');
-
-            // Alignment of text
-            KPITicker.iNameAlignment = KPITicker.getValue<string>(KPITicker.oDataView, 'name', 'alignName', 'left');
-
-            // The background color of containers
-            KPITicker.iBackgroundColor = KPITicker.getFill(KPITicker.oDataView, 'backgroundColor');
-
-            //Get Threshold Percentage Value
-            KPITicker.iPositiveThresholdPercentage = KPITicker.getValue(KPITicker.oDataView, 'threshold', 'PThresholdPercentage', null);
-            KPITicker.iNegativeThresholdPercentage = KPITicker.getValue(KPITicker.oDataView, 'threshold', 'NThresholdPercentage', null);
             //Getting Length of Input Threshold Percentage and splitting Dot Seperated string into different index of array
-            const pPercentage: string = String(KPITicker.iPositiveThresholdPercentage);
-            const pLPercentage: number = pPercentage.length;
-            //getting Dot "." Position for the string
-            const dotIndex: number = pPercentage.indexOf('.');
-            //if value with decimal places were not assigned and if the entered percentage length is greater than 4
-            if (dotIndex === -1 && pLPercentage > 4) {
-                KPITicker.iPositiveThresholdPercentage = 9999.99;
-            } else if (dotIndex !== -1) {
-                //if value with decimal places is assigned whatever might be the value entered after dot it trims into 2 Decimal places
-                KPITicker.iPositiveThresholdPercentage = KPITicker.iPositiveThresholdPercentage * 100;
-                KPITicker.iPositiveThresholdPercentage = KPITicker.iPositiveThresholdPercentage -
-                    KPITicker.iPositiveThresholdPercentage % 1;
-                KPITicker.iPositiveThresholdPercentage = KPITicker.iPositiveThresholdPercentage / 100;
-            } else if (KPITicker.iPositiveThresholdPercentage < 0) {
-                KPITicker.iPositiveThresholdPercentage = 0;
-            }
-            //if value with decimal places were not assigned and if the entered percentage length is greater than 4
-            const nPercentage: string = String(KPITicker.iNegativeThresholdPercentage);
-            const nLPercentage: number = nPercentage.length;
-            //getting Dot "." Position for the string
-            const ndotIndex: number = nPercentage.indexOf('.');
-            //if value with decimal places were not assigned and if the entered percentage length is greater than 4
-            if (ndotIndex === -1 && nLPercentage > 4) {
-                KPITicker.iNegativeThresholdPercentage = 9999.99;
-            } else if (ndotIndex !== -1) {
-                //if value with decimal places is assigned whatever might be the value entered after dot it trims into 2 Decimal places
-                KPITicker.iNegativeThresholdPercentage = KPITicker.iNegativeThresholdPercentage * 100;
-                KPITicker.iNegativeThresholdPercentage = KPITicker.iNegativeThresholdPercentage -
-                    KPITicker.iNegativeThresholdPercentage % 1;
-                KPITicker.iNegativeThresholdPercentage = KPITicker.iNegativeThresholdPercentage / 100;
-            } else if (KPITicker.iNegativeThresholdPercentage < 0) {
-                KPITicker.iNegativeThresholdPercentage = 0;
-            }
-            // The color of positive indicator
-            KPITicker.iPositiveIndicatorColor = KPITicker.getFill(KPITicker.oDataView, 'positiveIndicatorColor');
-            // The color of negative indicator
-            KPITicker.iNegativeIndicatorColor = KPITicker.getFill(KPITicker.oDataView, 'negativeIndicatorColor');
-            // The color of neutral indicator
-            KPITicker.iNeutralIndicatorColor = KPITicker.getFill(KPITicker.oDataView, 'neutralIndicatorColor');
-            // The color of positive threshold indicator
-            KPITicker.iPositiveThresholdIndicatorColor = KPITicker.getFill(KPITicker.oDataView, 'positiveThresholdIndicatorColor');
-            // The color of negative threshold indicator
-            KPITicker.iNegativeThresholdIndicatorColor = KPITicker.getFill(KPITicker.oDataView, 'negativeThresholdIndicatorColor');
-            // The color of neutral threshold indicator
-            KPITicker.iNeutralThresholdIndicatorColor = KPITicker.getFill(KPITicker.oDataView, 'neutralThresholdIndicatorColor');
-            // Style of Animation
-            KPITicker.iAnimationStyle = KPITicker.getValue(KPITicker.oDataView, 'animation', 'animationStyle', 'slideAndWait');
-            if (KPITicker.iShowAnimation === false) {
-                KPITicker.iHorizontalScroll = false;
-                KPITicker.iAnimationStyle = 'noAnimation';
-            }
+            
+            Visual.splitThresholdString();
 
             // On and Off Responsive
-            KPITicker.iResponsive = KPITicker.getValue(KPITicker.oDataView, 'responsive', 'makeResponsive', true);
-
-            // When responsive is turned off set minimum/maximum height and width of the tiles
-            if (!(KPITicker.iResponsive)) {
-                // Width of tiles when responsive is OFF
-                KPITicker.iWidthOfTiles = KPITicker.getValue(KPITicker.oDataView, 'responsive', 'widthOfTiles', 290);
-                // Height of tiles when responsive is OFF
-                KPITicker.iHeightOfTiles = KPITicker.getValue(KPITicker.oDataView, 'responsive', 'heightOfTiles', 80);
-
-                if (KPITicker.iVerticalStack) { // set min/max heigth and width in vertical stacking
-                    if (KPITicker.iWidthOfTiles > KPITicker.iMaxWidthOfTilesVertical) {
-                        KPITicker.iWidthOfTiles = KPITicker.iMaxWidthOfTilesVertical;
-                    } else if (KPITicker.iWidthOfTiles < KPITicker.iMinWidthOfTilesVertical) {
-                        KPITicker.iWidthOfTiles = KPITicker.iMinWidthOfTilesVertical;
-                    }
-                    if (KPITicker.iHeightOfTiles > KPITicker.iMaxHeightOfTilesVertical) {
-                        KPITicker.iHeightOfTiles = KPITicker.iMaxHeightOfTilesVertical;
-                    } else if (KPITicker.iHeightOfTiles < KPITicker.iMinHeightOfTilesVertical) {
-                        KPITicker.iHeightOfTiles = KPITicker.iMinHeightOfTilesVertical;
-                    }
-                } else { // set min/max heigth and width in horizontal stacking
-                    if (KPITicker.iWidthOfTiles > KPITicker.iMaxWidthOfTilesHorizontal) {
-                        KPITicker.iWidthOfTiles = KPITicker.iMaxWidthOfTilesHorizontal;
-                    } else if (KPITicker.iWidthOfTiles < KPITicker.iMinWidthOfTilesHorizontal) {
-                        KPITicker.iWidthOfTiles = KPITicker.iMinWidthOfTilesHorizontal;
-                    }
-                    if (KPITicker.iHeightOfTiles > KPITicker.iMaxHeightOfTilesHorizontal) {
-                        KPITicker.iHeightOfTiles = KPITicker.iMaxHeightOfTilesHorizontal;
-                    } else if (KPITicker.iHeightOfTiles < KPITicker.iMinHeightOfTilesHorizontal) {
-                        KPITicker.iHeightOfTiles = KPITicker.iMinHeightOfTilesHorizontal;
-                    }
-                }
-            }
+            Visual.onAndOff();
 
             // Set duration according to the format pane
-            KPITicker.iDurationS = KPITicker.getValue<number>(KPITicker.oDataView, 'animation', 'duration', 2);
-            if (KPITicker.iDurationS < KPITicker.iMinDuration) {
-                KPITicker.iDurationS = KPITicker.iMinDuration;
-            } else if (KPITicker.iDurationS > KPITicker.iMaxDuration) {
-                KPITicker.iDurationS = KPITicker.iMaxDuration;
-            }
-            // convert duration into milliseconds
-            KPITicker.iDuration = KPITicker.iDurationS * 1000;
-            // set the value of delay according to the duration of animation in a particukar ratio
-            KPITicker.iDelay = 3 * (KPITicker.iDuration / 10);
+            Visual.setDuration();
 
-            if (KPITicker.iAnimationStyle === 'noAnimation') {
-                KPITicker.iDelay = 0;
-            } else if (KPITicker.iAnimationStyle === 'fade') {
-                // set the duration as per the fade animation
-                KPITicker.iDuration = (KPITicker.iDurationS + KPITicker.iFadeDuration) * 1000;
-            }
             // creating wrapper1 initially to start the visual
-            KPITicker.createWrapper(1);
+            Visual.createWrapper(1);
+
             // change the top of wrapper1 to initially show it on the screen
+            Visual.wrapperCss();
+
+            let iDivStart:number = 1;
+            // the visual is updated
+            Visual.bIsUpdated = true;
+            // populating the wrapper1 that was created
+            
+            Visual.populateWrapper(1, iDivStart);
+
+            // Apply carousel feature if toggle is turned on
+            Visual.applyCarousel();
+            // change the value of Visual.iCurrentPosition to number of containers
+            Visual.iCurrentPosition = Visual.iNumberOfKPI;
+            // call add next data in fixed timeout only if some slicer is not applied or
+            //the number of data is equal to the number of containers.
+            if (!(Visual.iNumberOfKPI === Visual.oData.length) && (Visual.iShowAnimation === true)) {
+                Visual.iInterval = window.setTimeout(Visual.addNextData, Visual.iDuration);
+            }
+            this.events.renderingFinished(options);
+        }
+
+        // apply css to top of wrapper1 to initially show it on the screen
+        private static wrapperCss() {
             // Inline CSS required here
             $('#wrapper1').css({ top: '0px', left: '0px' });
             // change the height/width of wrapper initially
-            if (KPITicker.iResponsive) {
-                if (KPITicker.iVerticalStack) {
+            if (Visual.iResponsive) {
+                if (Visual.iVerticalStack) {
                     $('#wrapper').css({
-                        height: `${KPITicker.dynamicHeight - KPITicker.iMarginForScroll - 20}px`,
-                        width: `${KPITicker.iMaxDynamicWidthVertical}px`
+                        height: `${Visual.dynamicHeight - Visual.iMarginForScroll - 20}px`,
+                        width: `${Visual.iMaxDynamicWidthVertical}px`
                     });
                 } else {
                     $('#wrapper').css({
-                        height: `${KPITicker.iMaxDynamicHeightHorizontal}px`,
-                        width: `${KPITicker.dynamicWidth - KPITicker.iMarginForScroll * 2}px`
+                        height: `${Visual.iMaxDynamicHeightHorizontal}px`,
+                        width: `${Visual.dynamicWidth - Visual.iMarginForScroll * 2}px`
                     });
                 }
 
             } else {
 
-                if (KPITicker.iVerticalStack) {
+                if (Visual.iVerticalStack) {
 
                     $('#wrapper').css({
-                        height: `${(KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI)}px`,
-                        width: `${KPITicker.iWidthOfTiles}px`
+                        height: `${(Visual.iHeightOfTiles * Visual.iNumberOfKPI)}px`,
+                        width: `${Visual.iWidthOfTiles}px`
                     });
                 } else {
-                    $('#wrapper').css('height', `${KPITicker.iHeightOfTiles}px`)
-                        .css('width', `${(KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI)}px`);
+                    $('#wrapper').css('height', `${Visual.iHeightOfTiles}px`)
+                        .css('width', `${(Visual.iWidthOfTiles * Visual.iNumberOfKPI)}px`);
                 }
             }
-            iDivStart = 1;
-            // the visual is updated
-            KPITicker.bIsUpdated = true;
-            // populating the wrapper1 that was created
-            KPITicker.populateWrapper(1, iDivStart);
-            // Apply carousel feature if toggle is turned on
-            if (KPITicker.iNoOfTiles > 1 && KPITicker.iShowCarousel) {
-                if (KPITicker.iHorizontalScroll) { // if horizontal scrolling is on then previous and next arrows should be there
+        }
+
+        private static applyCarousel() {
+            if (Visual.iNoOfTiles > 1 && Visual.iShowCarousel) {
+                if (Visual.iHorizontalScroll) { // if horizontal scrolling is on then previous and next arrows should be there
                     // previously scrolled data should be appeared
                     $('<div>').attr('id', 'prev').addClass('slideArrows').appendTo('#scrollArrows')
                         // tslint:disable-next-line:typedef
-                        .on('click', function () {
+                        .on('click', ()=> {
                             // Reset duration and delay to 0 so that there is no animation when clicked on carousel
-                            KPITicker.iDuration = 0;
-                            KPITicker.iDelay = 0;
+                            Visual.iDuration = 0;
+                            Visual.iDelay = 0;
                             // subtracting 2 times as addNextdata function is adding numberofKPI in eachcase
-                            KPITicker.iCurrentPosition -= (KPITicker.iNumberOfKPI * 2);
-                            clearTimeout(KPITicker.iInterval);
-                            KPITicker.addNextData();
+                            Visual.iCurrentPosition -= (Visual.iNumberOfKPI * 2);
+                            clearTimeout(Visual.iInterval);
+                            Visual.addNextData();
                         });
                     $('<div>').attr('id', 'next').addClass('slideArrows').appendTo('#scrollArrows')
                         // tslint:disable-next-line:typedef
-                        .on('click', function () {
+                        .on('click', ()=> {
                             // Reset duration and delay to 0 so that there is no animation when clicked on carousel
-                            KPITicker.iDuration = 0;
-                            KPITicker.iDelay = 0;
-                            clearTimeout(KPITicker.iInterval);
-                            KPITicker.addNextData();
+                            Visual.iDuration = 0;
+                            Visual.iDelay = 0;
+                            clearTimeout(Visual.iInterval);
+                            Visual.addNextData();
                         });
 
-                    if (KPITicker.iResponsive) { // if responsive is turned on change the top,left of arrows according to the stacking
-                        if (KPITicker.iHorizontalStack) {
+                    if (Visual.iResponsive) { // if responsive is turned on change the top,left of arrows according to the stacking
+                        if (Visual.iHorizontalStack) {
 
                             $('.slideArrows').css({
-                                top: `${(KPITicker.iMaxDynamicHeightHorizontal
-                                    + KPITicker.iMarginForScroll) / 2}px`
+                                top: `${(Visual.iMaxDynamicHeightHorizontal
+                                    + Visual.iMarginForScroll) / 2}px`
                             });
-                            $('#prev').css('margin-top', `${KPITicker.iMarginForTop + KPITicker.iMarginForLeft}px`);
+                            $('#prev').css('margin-top', `${Visual.iMarginForTop + Visual.iMarginForLeft}px`);
                         } else {
 
-                            $('.slideArrows').css({ top: `${(KPITicker.dynamicHeight / 2) - KPITicker.iMarginForTop}px` });
-                            $('#prev').css('margin-top', `${KPITicker.iMarginForTop + KPITicker.iMarginForLeft}px`);
-                            $('#next').css('left', `${KPITicker.iMaxDynamicWidthVertical + KPITicker.iMarginForCarousel}px`);
+                            $('.slideArrows').css({ top: `${(Visual.dynamicHeight / 2) - Visual.iMarginForTop}px` });
+                            $('#prev').css('margin-top', `${Visual.iMarginForTop + Visual.iMarginForLeft}px`);
+                            $('#next').css('left', `${Visual.iMaxDynamicWidthVertical + Visual.iMarginForCarousel}px`);
                         }
                     } else {
-                        if (KPITicker.iHorizontalStack) {
+                        if (Visual.iHorizontalStack) {
 
-                            $('.slideArrows').css({ top: `${(KPITicker.iHeightOfTiles / 2) + KPITicker.iMarginForTop}px` });
-                            $('#prev').css('margin-top', `${KPITicker.iMarginForTop + KPITicker.iMarginForLeft}px`);
-                            $('#next').css('left', `${(KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI)
-                                + KPITicker.iMarginForCarousel}px`);
+                            $('.slideArrows').css({ top: `${(Visual.iHeightOfTiles / 2) + Visual.iMarginForTop}px` });
+                            $('#prev').css('margin-top', `${Visual.iMarginForTop + Visual.iMarginForLeft}px`);
+                            $('#next').css('left', `${(Visual.iWidthOfTiles * Visual.iNumberOfKPI)
+                                + Visual.iMarginForCarousel}px`);
                         } else {
                             $('.slideArrows').css({
-                                top: `${((KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI) / 2) + KPITicker.iBorderOfContainer}px`
+                                top: `${((Visual.iHeightOfTiles * Visual.iNumberOfKPI) / 2) + Visual.iBorderOfContainer}px`
                             });
-                            $('#prev').css('margin-top', `${KPITicker.iMarginForTop + KPITicker.iMarginForLeft}px`);
-                            $('#next').css('left', `${KPITicker.iWidthOfTiles + KPITicker.iMarginForCarousel}px`);
+                            $('#prev').css('margin-top', `${Visual.iMarginForTop + Visual.iMarginForLeft}px`);
+                            $('#next').css('left', `${Visual.iWidthOfTiles + Visual.iMarginForCarousel}px`);
                         }
                     }
                 } else { // if horizontal is off i.e. vertical scrolling is on then top and bottom arrows should be there
                     $('<div>').attr('id', 'top').addClass('slideArrows').appendTo('#scrollArrows')
                         // tslint:disable-next-line:typedef
-                        .on('click', function () {
+                        .on('click', ()=> {
                             // Reset duration and delay to 0 so that there is no animation when clicked on carousel
-                            KPITicker.iDuration = 0;
-                            KPITicker.iDelay = 0;
-                            clearTimeout(KPITicker.iInterval);
-                            KPITicker.addNextData();
+                            Visual.iDuration = 0;
+                            Visual.iDelay = 0;
+                            clearTimeout(Visual.iInterval);
+                            Visual.addNextData();
                         });
                     $('<div>').attr('id', 'bottom').addClass('slideArrows').appendTo('#scrollArrows')
                         // tslint:disable-next-line:typedef
-                        .on('click', function () {
+                        .on('click', ()=> {
                             // Reset duration and delay to 0 so that there is no animation when clicked on carousel
-                            KPITicker.iDuration = 0;
-                            KPITicker.iDelay = 0;
-                            KPITicker.iCurrentPosition -= (KPITicker.iNumberOfKPI * 2);
-                            clearTimeout(KPITicker.iInterval);
-                            KPITicker.addNextData();
+                            Visual.iDuration = 0;
+                            Visual.iDelay = 0;
+                            Visual.iCurrentPosition -= (Visual.iNumberOfKPI * 2);
+                            clearTimeout(Visual.iInterval);
+                            Visual.addNextData();
                         });
-                    if (KPITicker.iResponsive) {
-                        if (KPITicker.iHorizontalStack) {
-                            $('.slideArrows').css({ left: `${(KPITicker.dynamicWidth - KPITicker.iBorderOfContainer * 4)}px` });
+                    if (Visual.iResponsive) {
+                        if (Visual.iHorizontalStack) {
+                            $('.slideArrows').css({ left: `${(Visual.dynamicWidth - Visual.iBorderOfContainer * 4)}px` });
                         } else {
-                            $('.slideArrows').css({ left: `${(KPITicker.iMaxDynamicWidthVertical - KPITicker.iBorderOfContainer)}px` });
+                            $('.slideArrows').css({ left: `${(Visual.iMaxDynamicWidthVertical - Visual.iBorderOfContainer)}px` });
                         }
                     } else {
-                        if (KPITicker.iHorizontalStack) {
+                        if (Visual.iHorizontalStack) {
                             $('.slideArrows').css({
-                                left: `${((KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI) - KPITicker.iBorderOfContainer)}px`
+                                left: `${((Visual.iWidthOfTiles * Visual.iNumberOfKPI) - Visual.iBorderOfContainer)}px`
                             });
                         } else {
-                            $('.slideArrows').css({ left: `${(KPITicker.iWidthOfTiles - KPITicker.iBorderOfContainer)}px` });
+                            $('.slideArrows').css({ left: `${(Visual.iWidthOfTiles - Visual.iBorderOfContainer)}px` });
                         }
                     }
                 }
             }
-            // change the value of KPITIcker.iCurrentPosition to number of containers
-            KPITicker.iCurrentPosition = KPITicker.iNumberOfKPI;
-            // call add next data in fixed timeout only if some slicer is not applied or
-            //the number of data is equal to the number of containers.
+        }
 
-            if (!(KPITicker.iNumberOfKPI === KPITicker.oData.length) && (KPITicker.iShowAnimation === true)) {
-                KPITicker.iInterval = window.setTimeout(KPITicker.addNextData, KPITicker.iDuration);
+        // Set duration according to the format pane and convert accordingly
+        private static setDuration () {
+            Visual.iDurationS = Visual.getValue<number>(Visual.oDataView, 'animation', 'duration', 2);
+            if (Visual.iDurationS < Visual.iMinDuration) {
+                Visual.iDurationS = Visual.iMinDuration;
+            } else if (Visual.iDurationS > Visual.iMaxDuration) {
+                Visual.iDurationS = Visual.iMaxDuration;
             }
+            // convert duration into milliseconds
+            Visual.iDuration = Visual.iDurationS * 1000;
+            // set the value of delay according to the duration of animation in a particukar ratio
+            Visual.iDelay = 3 * (Visual.iDuration / 10);
+
+            if (Visual.iAnimationStyle === 'noAnimation') {
+                Visual.iDelay = 0;
+            } else if (Visual.iAnimationStyle === 'fade') {
+                // set the duration as per the fade animation
+                Visual.iDuration = (Visual.iDurationS + Visual.iFadeDuration) * 1000;
+            }
+        }
+        
+        // On and Off Responsive
+        private static onAndOff() {
+            Visual.iResponsive = Visual.getValue(Visual.oDataView, 'responsive', 'makeResponsive', true);
+
+            // When responsive is turned off set minimum/maximum height and width of the tiles
+            if (!(Visual.iResponsive)) {
+                // Width of tiles when responsive is OFF
+                Visual.iWidthOfTiles = Visual.getValue(Visual.oDataView, 'responsive', 'widthOfTiles', 290);
+                // Height of tiles when responsive is OFF
+                Visual.iHeightOfTiles = Visual.getValue(Visual.oDataView, 'responsive', 'heightOfTiles', 80);
+
+                if (Visual.iVerticalStack) { // set min/max heigth and width in vertical stacking
+                    if (Visual.iWidthOfTiles > Visual.iMaxWidthOfTilesVertical) {
+                        Visual.iWidthOfTiles = Visual.iMaxWidthOfTilesVertical;
+                    } else if (Visual.iWidthOfTiles < Visual.iMinWidthOfTilesVertical) {
+                        Visual.iWidthOfTiles = Visual.iMinWidthOfTilesVertical;
+                    }
+                    if (Visual.iHeightOfTiles > Visual.iMaxHeightOfTilesVertical) {
+                        Visual.iHeightOfTiles = Visual.iMaxHeightOfTilesVertical;
+                    } else if (Visual.iHeightOfTiles < Visual.iMinHeightOfTilesVertical) {
+                        Visual.iHeightOfTiles = Visual.iMinHeightOfTilesVertical;
+                    }
+                } else { // set min/max heigth and width in horizontal stacking
+                    if (Visual.iWidthOfTiles > Visual.iMaxWidthOfTilesHorizontal) {
+                        Visual.iWidthOfTiles = Visual.iMaxWidthOfTilesHorizontal;
+                    } else if (Visual.iWidthOfTiles < Visual.iMinWidthOfTilesHorizontal) {
+                        Visual.iWidthOfTiles = Visual.iMinWidthOfTilesHorizontal;
+                    }
+                    if (Visual.iHeightOfTiles > Visual.iMaxHeightOfTilesHorizontal) {
+                        Visual.iHeightOfTiles = Visual.iMaxHeightOfTilesHorizontal;
+                    } else if (Visual.iHeightOfTiles < Visual.iMinHeightOfTilesHorizontal) {
+                        Visual.iHeightOfTiles = Visual.iMinHeightOfTilesHorizontal;
+                    }
+                }
+            }
+        }
+
+        //Getting Length of Input Threshold Percentage and splitting Dot Seperated string into different index of array
+        private static splitThresholdString () {
+            const pPercentage: string = String(Visual.iPositiveThresholdPercentage);
+            const pLPercentage: number = pPercentage.length;
+            //getting Dot "." Position for the string
+            const dotIndex: number = pPercentage.indexOf('.');
+            //if value with decimal places were not assigned and if the entered percentage length is greater than 4
+            if (dotIndex === -1 && pLPercentage > 4) {
+                Visual.iPositiveThresholdPercentage = 9999.99;
+            } else if (dotIndex !== -1) {
+                //if value with decimal places is assigned whatever might be the value entered after dot it trims into 2 Decimal places
+                Visual.iPositiveThresholdPercentage = Visual.iPositiveThresholdPercentage * 100;
+                Visual.iPositiveThresholdPercentage = Visual.iPositiveThresholdPercentage -
+                    Visual.iPositiveThresholdPercentage % 1;
+                Visual.iPositiveThresholdPercentage = Visual.iPositiveThresholdPercentage / 100;
+            } else if (Visual.iPositiveThresholdPercentage < 0) {
+                Visual.iPositiveThresholdPercentage = 0;
+            }
+            //if value with decimal places were not assigned and if the entered percentage length is greater than 4
+            const nPercentage: string = String(Visual.iNegativeThresholdPercentage);
+            const nLPercentage: number = nPercentage.length;
+            //getting Dot "." Position for the string
+            const ndotIndex: number = nPercentage.indexOf('.');
+            //if value with decimal places were not assigned and if the entered percentage length is greater than 4
+            if (ndotIndex === -1 && nLPercentage > 4) {
+                Visual.iNegativeThresholdPercentage = 9999.99;
+            } else if (ndotIndex !== -1) {
+                //if value with decimal places is assigned whatever might be the value entered after dot it trims into 2 Decimal places
+                Visual.iNegativeThresholdPercentage = Visual.iNegativeThresholdPercentage * 100;
+                Visual.iNegativeThresholdPercentage = Visual.iNegativeThresholdPercentage -
+                    Visual.iNegativeThresholdPercentage % 1;
+                Visual.iNegativeThresholdPercentage = Visual.iNegativeThresholdPercentage / 100;
+            } else if (Visual.iNegativeThresholdPercentage < 0) {
+                Visual.iNegativeThresholdPercentage = 0;
+            }
+            // The color of positive indicator
+            Visual.iPositiveIndicatorColor = Visual.getFill(Visual.oDataView, 'positiveIndicatorColor');
+            // The color of negative indicator
+            Visual.iNegativeIndicatorColor = Visual.getFill(Visual.oDataView, 'negativeIndicatorColor');
+            // The color of neutral indicator
+            Visual.iNeutralIndicatorColor = Visual.getFill(Visual.oDataView, 'neutralIndicatorColor');
+            // The color of positive threshold indicator
+            Visual.iPositiveThresholdIndicatorColor = Visual.getFill(Visual.oDataView, 'positiveThresholdIndicatorColor');
+            // The color of negative threshold indicator
+            Visual.iNegativeThresholdIndicatorColor = Visual.getFill(Visual.oDataView, 'negativeThresholdIndicatorColor');
+            // The color of neutral threshold indicator
+            Visual.iNeutralThresholdIndicatorColor = Visual.getFill(Visual.oDataView, 'neutralThresholdIndicatorColor');
+            // Style of Animation
+            Visual.iAnimationStyle = Visual.getValue(Visual.oDataView, 'animation', 'animationStyle', 'slideAndWait');
+            if (Visual.iShowAnimation === false) {
+                Visual.iHorizontalScroll = false;
+                Visual.iAnimationStyle = 'noAnimation';
+            }
+        }
+
+        private static normalize(data: any[]): boolean {
+            Visual.oData = data;
+            // empty the main div when update is called
+            $('#wrapper').empty();
+            $('#scrollArrows').empty();
+
+            // The number of containers. Possible values 1,2,3,4
+            Visual.iNumberOfKPI = Visual.getValue<number>(Visual.oDataView, 'configuration', 'numberOfKPI', 4);
+            // convert KPI count to integer if it is in decimal
+            if (Visual.iNumberOfKPI % 1 !== 0) {
+                Visual.iNumberOfKPI -= Visual.iNumberOfKPI % 1;
+            }
+            if (Visual.iNumberOfKPI > Visual.iMaxKPICount) {
+                Visual.iNumberOfKPI = Visual.iMaxKPICount;
+            } else if (Visual.iNumberOfKPI < Visual.iMinKPICount) {
+                Visual.iNumberOfKPI = Visual.iMinKPICount;
+            }
+            if (Visual.oData.length < Visual.iNumberOfKPI) {
+                Visual.iNumberOfKPI = Visual.oData.length;
+            }
+            // if Visual.iNumberOfKPI is still 0 that means there is no data after filters are applied
+            if (Visual.iNumberOfKPI === 0) {
+                Visual.displayBasicRequirement(0);
+                return true;
+            }
+            // The font size of containers. We are normalizing it to be 15 at max as height is not changeable
+            Visual.iNameFontSize = Visual.getValue<number>(Visual.oDataView, 'name', 'fontSize', 14);
+            // Restrict max font size to 14
+            if (Visual.iNameFontSize > 25) {
+                Visual.iNameFontSize = 25;
+            }
+            Visual.iValueFontSize = Visual.getValue<number>(Visual.oDataView, 'value', 'fontSize', 14);
+            // Restrict max font size to 14
+            if (Visual.iValueFontSize > 25) {
+                Visual.iValueFontSize = 25;
+            }
+            // Status of show change percentage
+            Visual.iEnableDelta = Visual.getValue<number>(Visual.oDataView, 'configuration', 'enableDelta', 0);
+            // Carousel feature to be on or off
+            Visual.iNoOfTiles = Visual.oDataView.categorical.categories[0].values.length / Visual.iNumberOfKPI;
+            if (Visual.iNoOfTiles > 1) {
+                Visual.iShowCarousel = Visual.getValue<boolean>(Visual.oDataView, 'carousel', 'show', false);
+            } else {
+                Visual.iShowCarousel = false;
+            }
+            // Animation feature to be on or off
+            if (Visual.iNoOfTiles > 1) {
+                Visual.iShowAnimation = Visual.getValue<boolean>(Visual.oDataView, 'animation', 'show', true);
+            } else {
+                Visual.iShowAnimation = false;
+            }
+            // Change the scrolling to horizontal
+            Visual.iHorizontalScroll = Visual.getValue<boolean>(Visual.oDataView, 'animation', 'horizontalScroll', false);
+            if (Visual.iHorizontalScroll) {
+                Visual.iVerticalScroll = false;
+            } else {
+                Visual.iVerticalScroll = true;
+            }
+            // Change the stacking to vertical
+            Visual.iVerticalStack = Visual.getValue<boolean>(Visual.oDataView, 'animation', 'verticalStack', false);
+            if (Visual.iVerticalStack) {
+                Visual.iHorizontalStack = false;
+            } else {
+                Visual.iHorizontalStack = true;
+            }
+            // Display units and decimal places for values
+            Visual.iDisplayUnits = Visual.getValue<number>(Visual.oDataView, 'value', 'displayUnits', 0);
+            Visual.iDecimalPlaces = Visual.getValue<number>(Visual.oDataView, 'value', 'decimalPlaces', 0);
+            // Allowed decimal places from 0 to 4 only
+            if (Visual.iDecimalPlaces > 4) {
+                Visual.iDecimalPlaces = 4;
+            } else if (Visual.iDecimalPlaces < 0) {
+                Visual.iDecimalPlaces = 0;
+            } else {
+                // tslint:disable-next-line:no-bitwise
+                Visual.iDecimalPlaces = ~~Visual.iDecimalPlaces;
+            }
+            // The font color of Name and Value
+            Visual.iValueFontColor = Visual.getFill(Visual.oDataView, 'valueFontColor');
+            Visual.iNameFontColor = Visual.getFill(Visual.oDataView, 'nameFontColor');
+            // The font family of Name and Value
+            Visual.iNameFontFamily = Visual.getValue<string>(Visual.oDataView, 'name', 'fontFamily', 'Segoe UI');
+            Visual.iValueFontFamily = Visual.getValue<string>(Visual.oDataView, 'value', 'fontFamily', 'Segoe UI');
+            // Alignment of text
+            Visual.iNameAlignment = Visual.getValue<string>(Visual.oDataView, 'name', 'alignName', 'left');
+            // The background color of containers
+            Visual.iBackgroundColor = Visual.getFill(Visual.oDataView, 'backgroundColor');
+            //Get Threshold Percentage Value
+            Visual.iPositiveThresholdPercentage = Visual.getValue(Visual.oDataView, 'threshold', 'PThresholdPercentage', null);
+            Visual.iNegativeThresholdPercentage = Visual.getValue(Visual.oDataView, 'threshold', 'NThresholdPercentage', null);
+            return false;
+        }
+
+        private static appendIndex(options: VisualUpdateOptions,kpiName: string,kpiCurrentValue: string, 
+            kpiLastValue: string,kpiStatus: string,kpiPositiveThresholdValue: string,kpiNegativeThresholdValue: string): boolean {
+             // to pass dataView as a parameter when formatting options are choosen
+             Visual.oDataView = options.dataViews[0];
+             let oDataCategorical: DataViewCategorical;
+             oDataCategorical = Visual.oDataView.categorical;
+             let iNumberOfValues: number;
+             iNumberOfValues = oDataCategorical.values.length;
+             let iNumberOfCategories: number;
+             iNumberOfCategories = oDataCategorical.categories.length;
+             let iIndex: number = 0;
+ 
+             // initializing the Visual.iIndexOfName, Visual.iIndexOfStatus,
+             //Visual.iIndexOfLastValue,Visual.iIndexOfCurrentValue to -1 so that
+             //if they are not selected by user the value corresponding to them is not displayed
+             Visual.iIndexOfName = -1;
+             Visual.iIndexOfStatus = -1;
+             Visual.iIndexOfLastValue = -1;
+             Visual.iIndexOfCurrentValue = -1;
+             Visual.iPositiveThresholdValue = -1;
+             Visual.iNegativeThresholdValue = -1;
+ 
+             // assigning proper index for category KPI Name
+             for (iIndex = 0; iIndex < iNumberOfCategories; iIndex++) {
+                 if (oDataCategorical.categories[iIndex].source.roles[kpiName]) {
+                     Visual.iIndexOfName = iIndex;
+                     break;
+                 }
+             }
+             // assigning proper index for measures
+             for (iIndex = 0; iIndex < iNumberOfValues; iIndex++) {
+                 // assigning index for measure KPI Current Value
+                 if (oDataCategorical.values[iIndex].source.roles[kpiCurrentValue]) {
+                     Visual.iIndexOfCurrentValue = iIndex;
+                 } else if (oDataCategorical.values[iIndex].source.roles[kpiLastValue]) { // assigning index for measure KPI Last Value
+                     Visual.iIndexOfLastValue = iIndex;
+                 } else if (oDataCategorical.values[iIndex].source.roles[kpiStatus]) { // assigning index for measure KPI Status
+                     Visual.iIndexOfStatus = iIndex;
+                     // assigning index for measure KPI Positive Threshold
+                 } else if (oDataCategorical.values[iIndex].source.roles[kpiPositiveThresholdValue]) {
+                     Visual.iPositiveThresholdValue = iIndex;
+                     // assigning index for measure KPI Negative Threshold
+                 } else if (oDataCategorical.values[iIndex].source.roles[kpiNegativeThresholdValue]) {
+                     Visual.iNegativeThresholdValue = iIndex;
+                 }
+             }
+             // if KPI current value or KPI name is not selected
+             if (Visual.iIndexOfCurrentValue === -1 || Visual.iIndexOfName === -1) {
+                 Visual.displayBasicRequirement(1);
+ 
+                 return true;
+             }
+             //if status, Positive Threshold Data bag and Negative Threshold Data Bag were selected
+             if (Visual.iIndexOfStatus !== -1 && (Visual.iPositiveThresholdValue !== -1 || Visual.iNegativeThresholdValue !== -1)) {
+                 Visual.displayBasicRequirement(3);
+ 
+                 return true;
+             }
+             // if status column has values other than -1,0 and 1
+             if (Visual.iIndexOfStatus !== -1) {
+                 let oStatusData: PrimitiveValue[];
+                 oStatusData = Visual.oDataView.categorical.values[Visual.iIndexOfStatus].values;
+                 let iLengthOfData: number;
+                 iLengthOfData = oStatusData.length;
+                 for (iIndex = 0; iIndex < iLengthOfData; iIndex++) {
+                     if (oStatusData[iIndex] === null || !(oStatusData[iIndex] === 1 ||
+                         oStatusData[iIndex] === -1 || oStatusData[iIndex] === 0)) {
+                         Visual.displayBasicRequirement(2);
+ 
+                         return true;
+                     }
+                 }
+             }
+             return false;
         }
         /*
         * method to display text if basic requirements are not satisfied
         */
         private static displayBasicRequirement(iStatus: number): void {
             $('#wrapper').empty();
-            $('#wrapper').css('width', KPITicker.dynamicWidth);
+            $('#wrapper').css('width', Visual.dynamicWidth);
             $('<p>').attr('id', 'textToDisplay').appendTo('#wrapper');
-            $('#textToDisplay').css('width', KPITicker.dynamicWidth);
+            $('#textToDisplay').css('width', Visual.dynamicWidth);
             if (iStatus === 1) {
                 document.getElementById('textToDisplay').textContent = `Please select 'KPI current value' `;
             } else if (iStatus === 2) { // if appropriate column for status is not selected
@@ -677,107 +715,173 @@ module powerbi.extensibility.visual {
             let oObjectEnumeration: VisualObjectInstance[];
             oObjectEnumeration = [];
             let oDataView: DataView;
-            oDataView = KPITicker.oDataView;
+            oDataView = Visual.oDataView;
             switch (oObjectName) {
                 // enumerate containers object from capabilities.json
                 case 'carousel':
-                    if ((KPITicker.iNoOfTiles) > 1) {
-                        let oCarousel: VisualObjectInstance;
-                        oCarousel = {
-                            objectName: 'carousel',
-                            displayName: 'Carousel',
-                            selector: null,
-                            properties: {
-                                show: KPITicker.iShowCarousel
-                            }
-                        };
-                        oObjectEnumeration.push(oCarousel);
-                    }
+                    oObjectEnumeration = Visual.enumerateCarousel(oObjectEnumeration);
                     break;
-
                 case 'animation':
-                    let oAnimation: VisualObjectInstance;
-                    oAnimation = {
-                        objectName: 'animation',
-                        displayName: 'Animation',
-                        selector: null,
-                        properties: {
-                            show: KPITicker.iShowAnimation,
-                            duration: KPITicker.iDurationS,
-                            horizontalScroll: KPITicker.iHorizontalScroll,
-                            verticalStack: KPITicker.iVerticalStack,
-                            animationStyle: KPITicker.iAnimationStyle
-                        }
-                    };
-                    oObjectEnumeration.push(oAnimation);
+                    oObjectEnumeration = Visual.enumerateAnimation(oObjectEnumeration);
                     break;
                 case 'responsive':
-                    let oResponsive: VisualObjectInstance;
+                    oObjectEnumeration = Visual.enumerateResponsive(oObjectEnumeration);
+                    break;
+                case 'name':
+                    oObjectEnumeration = Visual.enumerateName(oObjectEnumeration);
+                    break;
+                case 'value':
+                    oObjectEnumeration = Visual.enumerateValue(oObjectEnumeration);
+                    break;
+                case 'configuration':
+                    oObjectEnumeration = Visual.enumerateConfiguration(oObjectEnumeration);
+                    break;
+                // enumerate indicators object from capabilities.json
+                case 'indicators':
+                    oObjectEnumeration = Visual.enumerateIndicators(oObjectEnumeration)
+                    break;
+                // enumerate threshold object from capabilities.json
+                case 'threshold':
+                    // enumerate threshold positive and negative input fields, if positive and negative threshold data bag were not selected
+                    oObjectEnumeration = Visual.enumerateThreshold(oObjectEnumeration);
+                    break;
+                default:
+                    break;
+            }
+
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Carousel defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateCarousel(oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            if ((Visual.iNoOfTiles) > 1) {
+                let oCarousel: VisualObjectInstance;
+                oCarousel = {
+                    objectName: 'carousel',
+                    displayName: 'Carousel',
+                    selector: null,
+                    properties: {
+                        show: Visual.iShowCarousel
+                    }
+                };
+                oObjectEnumeration.push(oCarousel);
+            }
+            
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Animation defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateAnimation(oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            let oAnimation: VisualObjectInstance;
+                oAnimation = {
+                    objectName: 'animation',
+                    displayName: 'Animation',
+                    selector: null,
+                    properties: {
+                        show: Visual.iShowAnimation,
+                        duration: Visual.iDurationS,
+                        horizontalScroll: Visual.iHorizontalScroll,
+                        verticalStack: Visual.iVerticalStack,
+                        animationStyle: Visual.iAnimationStyle
+                    }
+                };
+                oObjectEnumeration.push(oAnimation);
+
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Responsive defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateResponsive (oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            let oResponsive: VisualObjectInstance;
                     oResponsive = {
                         objectName: 'responsive',
                         displayName: 'Responsive',
                         selector: null,
                         properties: {
-                            makeResponsive: KPITicker.iResponsive
+                            makeResponsive: Visual.iResponsive
                         }
                     };
-                    if (KPITicker.iResponsive === false) {
+                    if (Visual.iResponsive === false) {
                         oResponsive = {
                             objectName: 'responsive',
                             displayName: 'Responsive',
                             selector: null,
                             properties: {
-                                makeResponsive: KPITicker.iResponsive,
-                                widthOfTiles: KPITicker.iWidthOfTiles,
-                                heightOfTiles: KPITicker.iHeightOfTiles
+                                makeResponsive: Visual.iResponsive,
+                                widthOfTiles: Visual.iWidthOfTiles,
+                                heightOfTiles: Visual.iHeightOfTiles
                             }
                         };
                     }
                     oObjectEnumeration.push(oResponsive);
-                    break;
-                case 'name':
-                    let oName: VisualObjectInstance;
+
+            return oObjectEnumeration; 
+        }
+        /*
+        * method to enumerate through the Name defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateName (oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            let oName: VisualObjectInstance;
                     oName = {
                         objectName: 'name',
                         displayName: 'Name',
                         selector: null,
                         properties: {
-                            fontSize: KPITicker.iNameFontSize,
-                            nameFontColor: KPITicker.iNameFontColor,
-                            fontFamily: KPITicker.iNameFontFamily,
-                            alignName: KPITicker.iNameAlignment
+                            fontSize: Visual.iNameFontSize,
+                            nameFontColor: Visual.iNameFontColor,
+                            fontFamily: Visual.iNameFontFamily,
+                            alignName: Visual.iNameAlignment
 
                         }
                     };
                     oObjectEnumeration.push(oName);
-                    break;
-                case 'value':
-                    let oValue: VisualObjectInstance;
+
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Value defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateValue (oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            let oValue: VisualObjectInstance;
                     oValue = {
                         objectName: 'value',
                         displayName: 'Value',
                         selector: null,
                         properties: {
-                            fontSize: KPITicker.iValueFontSize,
-                            valueFontColor: KPITicker.iValueFontColor,
-                            fontFamily: KPITicker.iValueFontFamily,
-                            displayUnits: KPITicker.iDisplayUnits,
-                            decimalPlaces: KPITicker.iDecimalPlaces
+                            fontSize: Visual.iValueFontSize,
+                            valueFontColor: Visual.iValueFontColor,
+                            fontFamily: Visual.iValueFontFamily,
+                            displayUnits: Visual.iDisplayUnits,
+                            decimalPlaces: Visual.iDecimalPlaces
                         }
                     };
-                    oObjectEnumeration.push(oValue);
-                    break;
-                case 'configuration':
-                    let oConfiguration: VisualObjectInstance;
-                    if (KPITicker.iIndexOfLastValue !== -1) {
+            oObjectEnumeration.push(oValue);
+
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Configuration defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateConfiguration (oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            let oConfiguration: VisualObjectInstance;
+                    if (Visual.iIndexOfLastValue !== -1) {
                         oConfiguration = {
                             objectName: 'configuration',
                             displayName: 'Formatting',
                             selector: null,
                             properties: {
-                                numberOfKPI: KPITicker.iNumberOfKPI,
-                                enableDelta: KPITicker.iEnableDelta,
-                                backgroundColor: KPITicker.iBackgroundColor
+                                numberOfKPI: Visual.iNumberOfKPI,
+                                enableDelta: Visual.iEnableDelta,
+                                backgroundColor: Visual.iBackgroundColor
                             }
                         };
                         oObjectEnumeration.push(oConfiguration);
@@ -787,111 +891,117 @@ module powerbi.extensibility.visual {
                             displayName: 'Formatting',
                             selector: null,
                             properties: {
-                                numberOfKPI: KPITicker.iNumberOfKPI,
-                                backgroundColor: KPITicker.iBackgroundColor
+                                numberOfKPI: Visual.iNumberOfKPI,
+                                backgroundColor: Visual.iBackgroundColor
                             }
                         };
                         oObjectEnumeration.push(oConfiguration);
                     }
-                    break;
-                // enumerate indicators object from capabilities.json
-                case 'indicators':
-                    if (KPITicker.iIndexOfStatus !== -1) {
-                        let oIndicators: VisualObjectInstance;
-                        oIndicators = {
-                            objectName: 'indicators',
-                            displayName: 'Indicators',
-                            selector: null,
-                            properties: {
-                                positiveIndicatorColor: KPITicker.iPositiveIndicatorColor,
-                                negativeIndicatorColor: KPITicker.iNegativeIndicatorColor,
-                                neutralIndicatorColor: KPITicker.iNeutralIndicatorColor
-                            }
-                        };
-                        oObjectEnumeration.push(oIndicators);
+            
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Indicators defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateIndicators (oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            if (Visual.iIndexOfStatus !== -1) {
+                let oIndicators: VisualObjectInstance;
+                oIndicators = {
+                    objectName: 'indicators',
+                    displayName: 'Indicators',
+                    selector: null,
+                    properties: {
+                        positiveIndicatorColor: Visual.iPositiveIndicatorColor,
+                        negativeIndicatorColor: Visual.iNegativeIndicatorColor,
+                        neutralIndicatorColor: Visual.iNeutralIndicatorColor
                     }
-                    break;
-                // enumerate threshold object from capabilities.json
-                case 'threshold':
-                    // enumerate threshold positive and negative input fields, if positive and negative threshold data bag were not selected
-                    if (KPITicker.iIndexOfLastValue !== -1 && KPITicker.iIndexOfStatus === -1
-                        && KPITicker.iPositiveThresholdValue === -1
-                        && KPITicker.iNegativeThresholdValue === -1) {
-                        let oThreshold: VisualObjectInstance;
-                        oThreshold = {
-                            objectName: 'threshold',
-                            displayName: 'Threshold',
-                            selector: null,
-                            properties: {
-                                positiveThresholdIndicatorColor: KPITicker.iPositiveThresholdIndicatorColor,
-                                PThresholdPercentage: KPITicker.iPositiveThresholdPercentage,
-                                negativeThresholdIndicatorColor: KPITicker.iNegativeThresholdIndicatorColor,
-                                NThresholdPercentage: KPITicker.iNegativeThresholdPercentage,
-                                neutralThresholdIndicatorColor: KPITicker.iNeutralThresholdIndicatorColor
-                            }
-                        };
-                        oObjectEnumeration.push(oThreshold);
+                };
+                oObjectEnumeration.push(oIndicators);
+            }
+            
+            return oObjectEnumeration;
+        }
+        /*
+        * method to enumerate through the Threshold defined in the capabilities and adds the properties to the format pane
+        * @param {VisualObjectInstance} oObjectEnumeration - list of object instances
+        */
+        private static enumerateThreshold (oObjectEnumeration: VisualObjectInstance[]): VisualObjectInstance[] {
+            if (Visual.iIndexOfLastValue !== -1 && Visual.iIndexOfStatus === -1
+                && Visual.iPositiveThresholdValue === -1
+                && Visual.iNegativeThresholdValue === -1) {
+                let oThreshold: VisualObjectInstance;
+                oThreshold = {
+                    objectName: 'threshold',
+                    displayName: 'Threshold',
+                    selector: null,
+                    properties: {
+                        positiveThresholdIndicatorColor: Visual.iPositiveThresholdIndicatorColor,
+                        PThresholdPercentage: Visual.iPositiveThresholdPercentage,
+                        negativeThresholdIndicatorColor: Visual.iNegativeThresholdIndicatorColor,
+                        NThresholdPercentage: Visual.iNegativeThresholdPercentage,
+                        neutralThresholdIndicatorColor: Visual.iNeutralThresholdIndicatorColor
                     }
-                    // enumerate threshold with negative input field, if only positive threshold data bag is selected
-                    if (KPITicker.iIndexOfStatus === -1
-                        && KPITicker.iPositiveThresholdValue !== -1
-                        && KPITicker.iNegativeThresholdValue === -1) {
-                        let oThreshold: VisualObjectInstance;
-                        oThreshold = {
-                            objectName: 'threshold',
-                            displayName: 'Threshold',
-                            selector: null,
-                            properties: {
-                                positiveThresholdIndicatorColor: KPITicker.iPositiveThresholdIndicatorColor,
-                                negativeThresholdIndicatorColor: KPITicker.iNegativeThresholdIndicatorColor,
-                                NThresholdPercentage: KPITicker.iNegativeThresholdPercentage,
-                                neutralThresholdIndicatorColor: KPITicker.iNeutralThresholdIndicatorColor
-                            }
-                        };
-                        oObjectEnumeration.push(oThreshold);
+                };
+                oObjectEnumeration.push(oThreshold);
+            }
+            // enumerate threshold with negative input field, if only positive threshold data bag is selected
+            if (Visual.iIndexOfStatus === -1
+                && Visual.iPositiveThresholdValue !== -1
+                && Visual.iNegativeThresholdValue === -1) {
+                let oThreshold: VisualObjectInstance;
+                oThreshold = {
+                    objectName: 'threshold',
+                    displayName: 'Threshold',
+                    selector: null,
+                    properties: {
+                        positiveThresholdIndicatorColor: Visual.iPositiveThresholdIndicatorColor,
+                        negativeThresholdIndicatorColor: Visual.iNegativeThresholdIndicatorColor,
+                        NThresholdPercentage: Visual.iNegativeThresholdPercentage,
+                        neutralThresholdIndicatorColor: Visual.iNeutralThresholdIndicatorColor
                     }
-                    // enumerate threshold with positive input field, if only negative threshold data bag is selected
-                    if (KPITicker.iIndexOfStatus === -1
-                        && KPITicker.iNegativeThresholdValue !== -1
-                        && KPITicker.iPositiveThresholdValue === -1) {
-                        let oThreshold: VisualObjectInstance;
-                        oThreshold = {
-                            objectName: 'threshold',
-                            displayName: 'Threshold',
-                            selector: null,
-                            properties: {
-                                positiveThresholdIndicatorColor: KPITicker.iPositiveThresholdIndicatorColor,
-                                PThresholdPercentage: KPITicker.iPositiveThresholdPercentage,
-                                negativeThresholdIndicatorColor: KPITicker.iNegativeThresholdIndicatorColor,
-                                neutralThresholdIndicatorColor: KPITicker.iNeutralThresholdIndicatorColor
-                            }
-                        };
-                        oObjectEnumeration.push(oThreshold);
+                };
+                oObjectEnumeration.push(oThreshold);
+            }
+            // enumerate threshold with positive input field, if only negative threshold data bag is selected
+            if (Visual.iIndexOfStatus === -1
+                && Visual.iNegativeThresholdValue !== -1
+                && Visual.iPositiveThresholdValue === -1) {
+                let oThreshold: VisualObjectInstance;
+                oThreshold = {
+                    objectName: 'threshold',
+                    displayName: 'Threshold',
+                    selector: null,
+                    properties: {
+                        positiveThresholdIndicatorColor: Visual.iPositiveThresholdIndicatorColor,
+                        PThresholdPercentage: Visual.iPositiveThresholdPercentage,
+                        negativeThresholdIndicatorColor: Visual.iNegativeThresholdIndicatorColor,
+                        neutralThresholdIndicatorColor: Visual.iNeutralThresholdIndicatorColor
                     }
-                    // enumerate threshold with color field, if both positive and negative threshold data bag were selected
-                    if (KPITicker.iIndexOfStatus === -1
-                        && KPITicker.iPositiveThresholdValue !== -1
-                        && KPITicker.iNegativeThresholdValue !== -1) {
-                        let oThreshold: VisualObjectInstance;
-                        oThreshold = {
-                            objectName: 'threshold',
-                            displayName: 'Threshold',
-                            selector: null,
-                            properties: {
-                                positiveThresholdIndicatorColor: KPITicker.iPositiveThresholdIndicatorColor,
-                                negativeThresholdIndicatorColor: KPITicker.iNegativeThresholdIndicatorColor,
-                                neutralThresholdIndicatorColor: KPITicker.iNeutralThresholdIndicatorColor
-                            }
-                        };
-                        oObjectEnumeration.push(oThreshold);
+                };
+                oObjectEnumeration.push(oThreshold);
+            }
+            // enumerate threshold with color field, if both positive and negative threshold data bag were selected
+            if (Visual.iIndexOfStatus === -1
+                && Visual.iPositiveThresholdValue !== -1
+                && Visual.iNegativeThresholdValue !== -1) {
+                let oThreshold: VisualObjectInstance;
+                oThreshold = {
+                    objectName: 'threshold',
+                    displayName: 'Threshold',
+                    selector: null,
+                    properties: {
+                        positiveThresholdIndicatorColor: Visual.iPositiveThresholdIndicatorColor,
+                        negativeThresholdIndicatorColor: Visual.iNegativeThresholdIndicatorColor,
+                        neutralThresholdIndicatorColor: Visual.iNeutralThresholdIndicatorColor
                     }
-                    break;
-                default:
-                    break;
+                };
+                oObjectEnumeration.push(oThreshold);
             }
 
             return oObjectEnumeration;
         }
+
         /*
         * method to get the color of font or background whichever is needed
         * @param {DataView} oDataView - contains the DataView of options
@@ -986,13 +1096,13 @@ module powerbi.extensibility.visual {
 
             return defaultValue;
         }
-        /*
-        * method to decide which class is to be used for what div and append html elements accordingly
-        * @param {DataView} oDataView - contains the DataView of options
-        * @param {string} sClassNames - class names that are to be applied to the div
-        * @param {number} iIndicator - to tell if the value to be displayed is Change Percentage or Change Value
-        * @param {number} iIndex - index of the data row whose value is to be populated
-        */
+        //
+        // method to decide which class is to be used for what div and append html elements accordingly
+        // @param {DataView} oDataView - contains the DataView of options
+        // @param {string} sClassNames - class names that are to be applied to the div
+        // @param {number} iIndicator - to tell if the value to be displayed is Change Percentage or Change Value
+        // @param {number} iIndex - index of the data row whose value is to be populated
+
         // tslint:disable-next-line:no-any
         // tslint:disable-next-line:cyclomatic-complexity
         private static appendData(oDataView: DataView, sClassNames: string, iIndicator: number, iIndex: number, sDivIdName: string): void {
@@ -1008,104 +1118,203 @@ module powerbi.extensibility.visual {
             // if iIndicator is 0, the value to be displayed is KPI Change Percentage
             if (iIndicator === 0) {
                 // when both current, last data bag were selected and when status, positive, negative threshold data bag were not selected
-                if (KPITicker.iIndexOfCurrentValue !== -1
-                    && KPITicker.iIndexOfLastValue !== -1
-                    && KPITicker.iIndexOfStatus === -1
+                if (Visual.iIndexOfCurrentValue !== -1
+                    && Visual.iIndexOfLastValue !== -1
+                    && Visual.iIndexOfStatus === -1
                     && (this.iPositiveThresholdPercentage !== null
                         || this.iNegativeThresholdPercentage !== null)
-                    && KPITicker.iPositiveThresholdValue === -1
-                    && KPITicker.iNegativeThresholdValue === -1) {
-                    iCurrentValue = <number>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
-                    iLastValue = <number>oDataView.categorical.values[KPITicker.iIndexOfLastValue].values[iIndex];
-                    // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
-                    const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
-                    // when Negative threshold Input is not given
-                    if (this.iNegativeThresholdPercentage === null) {
-                        if (iLastValue == null || iCurrentValue == null) {
-                            sValueDisplayed = '-';
-                            d3.select(sDivIdName).append('div')
-                                .classed(sClassNames, true)
-                                .attr('title', title + sValueDisplayed)
-                                .text(sValueDisplayed);
-                        } else {
-                            if (iLastValue === 0) {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                            } else {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                            }
-                            if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed >= this.iPositiveThresholdPercentage && this.iPositiveThresholdPercentage !== 0) {
-                                tStatus = 1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed > 0 && sValueDisplayed <= this.iPositiveThresholdPercentage) {
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            }
-                        }
-                    } else if (this.iPositiveThresholdPercentage === null) { // when Positive Threshold input field is null
-                        if (iLastValue == null || iCurrentValue == null) {
-                            sValueDisplayed = '-';
-                            d3.select(sDivIdName).append('div')
-                                .classed(sClassNames, true)
-                                .attr('title', title + sValueDisplayed)
-                                .text(sValueDisplayed);
-                        } else {
-                            if (iLastValue === 0) {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                            } else {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                            }
-                            if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed <= (-this.iNegativeThresholdPercentage) && this.iNegativeThresholdPercentage !== 0) {
-                                tStatus = -1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed < 0 && sValueDisplayed >= (-this.iNegativeThresholdPercentage)) {
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            }
-                        }
-                    } else { // when both the input fields either null or not null
-                        if (iLastValue == null || iCurrentValue == null) {
-                            sValueDisplayed = '-';
-                            d3.select(sDivIdName).append('div')
-                                .classed(sClassNames, true)
-                                .attr('title', title + sValueDisplayed)
-                                .text(sValueDisplayed);
-                        } else {
-                            if (iLastValue === 0) {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                            } else {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                            }
-                            if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed >= this.iPositiveThresholdPercentage && this.iPositiveThresholdPercentage !== 0) {
-                                tStatus = 1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed <= (-this.iNegativeThresholdPercentage) && this.iNegativeThresholdPercentage !== 0) {
-                                tStatus = -1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else {
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            }
-                        }
-                    }
+                    && Visual.iPositiveThresholdValue === -1
+                    && Visual.iNegativeThresholdValue === -1) {
+                        Visual.perChangeForCurrLast(oDataView, sClassNames, iIndicator, iIndex, sDivIdName);
                 }
                 // when both current, last, positive data bag were selected and when status, negative threshold data bag were not selected
-                if (KPITicker.iIndexOfCurrentValue !== -1
-                    && KPITicker.iIndexOfLastValue !== -1
-                    && KPITicker.iIndexOfStatus === -1
-                    && KPITicker.iPositiveThresholdValue !== -1
-                    && KPITicker.iNegativeThresholdValue === -1) {
-                    iCurrentValue = <number>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
-                    iLastValue = <number>oDataView.categorical.values[KPITicker.iIndexOfLastValue].values[iIndex];
-                    iPThresholdValue = <number>oDataView.categorical.values[KPITicker.iPositiveThresholdValue].values[iIndex];
+                if (Visual.iIndexOfCurrentValue !== -1
+                    && Visual.iIndexOfLastValue !== -1
+                    && Visual.iIndexOfStatus === -1
+                    && Visual.iPositiveThresholdValue !== -1
+                    && Visual.iNegativeThresholdValue === -1) {
+                        Visual.perChangeForCurrLastPos(oDataView, sClassNames, iIndicator, iIndex, sDivIdName);
+                }
+                // when both current, last, negative data bag were selected and when status, positive threshold data bag were not selected
+                if (Visual.iIndexOfCurrentValue !== -1
+                    && Visual.iIndexOfLastValue !== -1
+                    && Visual.iIndexOfStatus === -1
+                    && Visual.iPositiveThresholdValue === -1
+                    && Visual.iNegativeThresholdValue !== -1) {
+                        Visual.perChangeCurrLastNeg(oDataView, sClassNames, iIndicator, iIndex, sDivIdName);
+                }
+                // when both current, last, positive, negative threshold data bag were selected and when status data bag were not selected
+                if (Visual.iIndexOfCurrentValue !== -1
+                    && Visual.iIndexOfLastValue !== -1
+                    && Visual.iIndexOfStatus === -1
+                    && Visual.iPositiveThresholdValue !== -1
+                    && Visual.iNegativeThresholdValue !== -1) {
+                        Visual.perChangeCurrLastPosNeg(oDataView, sClassNames, iIndicator, iIndex, sDivIdName);
+                }
+
+                // tslint:disable-next-line:triple-equals
+                if (Visual.iIndexOfCurrentValue !== -1 && Visual.iIndexOfLastValue !== -1 && Visual.iEnableDelta == 1) {
+                    Visual.perChangeCurrLastDel(oDataView, sClassNames, iIndicator, iIndex, sDivIdName);
+                }
+                // tslint:disable-next-line:triple-equals
+            } else if (iIndicator == 1) {  // if iIndicator is 1, the value to be displayed is KPI Change Value
+                // tslint:disable-next-line:triple-equals
+                if (Visual.iIndexOfLastValue != -1 && Visual.iIndexOfCurrentValue != -1) {
+                    const title: string = 'KPI Change Value: ';
+                    iCurrentValue = <number>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
+                    iLastValue = <number>oDataView.categorical.values[Visual.iIndexOfLastValue].values[iIndex];
+                    if (iCurrentValue == null) {
+                        sValueDisplayed = iLastValue;
+                    } else if (iLastValue == null) {
+                        sValueDisplayed = iCurrentValue;
+                    } else {
+                        sValueDisplayed = iCurrentValue - iLastValue;
+                    }
+                    // If display unit is selected as Auto
+                    let displayVal: number = 0;
+                    // tslint:disable-next-line:no-any
+                    let tempdata: any = sValueDisplayed;
+                    tempdata = Math.round(tempdata);
+                    tempdata = Math.abs(tempdata);
+                    const valLen: number = String(tempdata).length;
+                    if (Visual.iDisplayUnits === 0) {
+                        if (valLen > 9) {
+                            displayVal = 1e9;
+                        } else if (valLen <= 9 && valLen > 6) {
+                            displayVal = 1e6;
+                        } else if (valLen <= 6 && valLen >= 4) {
+                            displayVal = 1e3;
+                        } else {
+                            displayVal = 10;
+                        }
+                    }
+                    // Apply formatting according to the display unit and decimal places
+                    const formatter: IValueFormatter = valueFormatter.create({
+                        format: Visual.oDataView.categorical.values[Visual.iIndexOfCurrentValue].source.format ?
+                            Visual.oDataView.categorical.values[Visual.iIndexOfCurrentValue].source.format :
+                            valueFormatter.DefaultNumericFormat,
+                        value: Visual.iDisplayUnits === 0 ? displayVal : Visual.iDisplayUnits,
+                        precision: Visual.iDecimalPlaces
+                    });
+                    sValueDisplayed = formatter.format(sValueDisplayed);
+                    d3.select(sDivIdName).append('div')
+                        .classed(sClassNames, true)
+                        .attr('title', title + sValueDisplayed)
+                        .text(sValueDisplayed);
+                }
+            }
+        }
+
+        // subfunctionality of appendData method
+        // when both current, last data bag were selected and when status, positive, negative threshold data bag were not selected
+        private static perChangeForCurrLast (oDataView: DataView,sClassNames: string, iIndicator: number, iIndex: number, sDivIdName: string): void {
+            let sValueDisplayed: any;
+            let iCurrentValue: number;
+            let iLastValue: number;
+            let tStatus: number;
+            // this variable stores the percenatge from positive, negative threshold data bag
+            let iPThresholdValue: number = 0;
+            let iNThresholdValue: number = 0;
+
+            iCurrentValue = <number>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
+            iLastValue = <number>oDataView.categorical.values[Visual.iIndexOfLastValue].values[iIndex];
+            // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
+            const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
+            // when Negative threshold Input is not given
+            if (this.iNegativeThresholdPercentage === null) {
+                if (iLastValue == null || iCurrentValue == null) {
+                    sValueDisplayed = '-';
+                    d3.select(sDivIdName).append('div')
+                        .classed(sClassNames, true)
+                        .attr('title', title + sValueDisplayed)
+                        .text(sValueDisplayed);
+                } else {
+                    if (iLastValue === 0) {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                    } else {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                    }
+                    if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed >= this.iPositiveThresholdPercentage && this.iPositiveThresholdPercentage !== 0) {
+                        tStatus = 1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed > 0 && sValueDisplayed <= this.iPositiveThresholdPercentage) {
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    }
+                }
+            } else if (this.iPositiveThresholdPercentage === null) { // when Positive Threshold input field is null
+                if (iLastValue == null || iCurrentValue == null) {
+                    sValueDisplayed = '-';
+                    d3.select(sDivIdName).append('div')
+                        .classed(sClassNames, true)
+                        .attr('title', title + sValueDisplayed)
+                        .text(sValueDisplayed);
+                } else {
+                    if (iLastValue === 0) {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                    } else {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                    }
+                    if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed <= (-this.iNegativeThresholdPercentage) && this.iNegativeThresholdPercentage !== 0) {
+                        tStatus = -1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed < 0 && sValueDisplayed >= (-this.iNegativeThresholdPercentage)) {
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    }
+                }
+            } else { // when both the input fields either null or not null
+                if (iLastValue == null || iCurrentValue == null) {
+                    sValueDisplayed = '-';
+                    d3.select(sDivIdName).append('div')
+                        .classed(sClassNames, true)
+                        .attr('title', title + sValueDisplayed)
+                        .text(sValueDisplayed);
+                } else {
+                    if (iLastValue === 0) {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                    } else {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                    }
+                    if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed >= this.iPositiveThresholdPercentage && this.iPositiveThresholdPercentage !== 0) {
+                        tStatus = 1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed <= (-this.iNegativeThresholdPercentage) && this.iNegativeThresholdPercentage !== 0) {
+                        tStatus = -1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else {
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    }
+                }
+            }
+        }
+
+        // subfunctionality of appendData method
+        // when both current, last, positive data bag were selected and when status, negative threshold data bag were not selected
+        private static perChangeForCurrLastPos (oDataView: DataView,sClassNames: string, iIndicator: number, iIndex: number, sDivIdName: string): void {
+
+            // tslint:disable-next-line:no-any
+            let sValueDisplayed: any;
+            let iCurrentValue: number;
+            let iLastValue: number;
+            let tStatus: number;
+            // this variable stores the percenatge from positive, negative threshold data bag
+            let iPThresholdValue: number = 0;
+            let iNThresholdValue: number = 0;
+
+            iCurrentValue = <number>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
+                    iLastValue = <number>oDataView.categorical.values[Visual.iIndexOfLastValue].values[iIndex];
+                    iPThresholdValue = <number>oDataView.categorical.values[Visual.iPositiveThresholdValue].values[iIndex];
                     const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
                     if (this.iNegativeThresholdPercentage !== null) { // Negative threshold value
                         // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
@@ -1123,16 +1332,16 @@ module powerbi.extensibility.visual {
                             }
                             if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
                                 tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             } else if (sValueDisplayed >= iPThresholdValue && iPThresholdValue !== 0) {
                                 tStatus = 1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             } else if (sValueDisplayed <= (-this.iNegativeThresholdPercentage) && this.iNegativeThresholdPercentage !== 0) {
                                 tStatus = -1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             } else {
                                 tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             }
                         }
                     } else {
@@ -1151,197 +1360,172 @@ module powerbi.extensibility.visual {
                             }
                             if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
                                 tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             } else if (sValueDisplayed >= iPThresholdValue && iPThresholdValue !== 0) {
                                 tStatus = 1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             } else if (sValueDisplayed > 0 && sValueDisplayed <= iPThresholdValue) {
                                 tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
+                                Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
                             }
                         }
                     }
-                }
-                // when both current, last, negative data bag were selected and when status, positive threshold data bag were not selected
-                if (KPITicker.iIndexOfCurrentValue !== -1
-                    && KPITicker.iIndexOfLastValue !== -1
-                    && KPITicker.iIndexOfStatus === -1
-                    && KPITicker.iPositiveThresholdValue === -1
-                    && KPITicker.iNegativeThresholdValue !== -1) {
-                    iCurrentValue = <number>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
-                    iLastValue = <number>oDataView.categorical.values[KPITicker.iIndexOfLastValue].values[iIndex];
-                    iNThresholdValue = <number>oDataView.categorical.values[KPITicker.iNegativeThresholdValue].values[iIndex];
-                    // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
-                    const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
-                    if (this.iPositiveThresholdPercentage !== null) {
-                        if (iLastValue == null || iCurrentValue == null) {
-                            sValueDisplayed = '-';
-                            d3.select(sDivIdName).append('div')
-                                .classed(sClassNames, true)
-                                .attr('title', title + sValueDisplayed)
-                                .text(sValueDisplayed);
-                        } else {
-                            if (iLastValue === 0) {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                            } else {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                            }
-                            if (sValueDisplayed === '0.00') {   // when svaluedisplayed is equal to zero then neutral sign will applied
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed >= this.iPositiveThresholdPercentage && this.iPositiveThresholdPercentage !== 0) {
-                                tStatus = 1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed <= (-iNThresholdValue) && iNThresholdValue !== 0) {
-                                tStatus = -1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else {
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            }
-                        }
-                    } else {
-                        if (iLastValue == null || iCurrentValue == null) {
-                            sValueDisplayed = '-';
-                            d3.select(sDivIdName).append('div')
-                                .classed(sClassNames, true)
-                                .attr('title', title + sValueDisplayed)
-                                .text(sValueDisplayed);
-                        } else {
-                            if (iLastValue === 0) {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                            } else {
-                                sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                            }
-                            if (sValueDisplayed === '0.00') {   // when svaluedisplayed is equal to zero then neutral sign will applied
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed <= (-iNThresholdValue) && iNThresholdValue !== 0) {
-                                tStatus = -1;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            } else if (sValueDisplayed < 0 && sValueDisplayed > (-this.iNegativeThresholdPercentage)) {
-                                tStatus = 0;
-                                KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                            }
-                        }
-                    }
-                }
-                //when both current, last, positive, negative threshold data bag were selected and when status data bag were not selected
-                if (KPITicker.iIndexOfCurrentValue !== -1
-                    && KPITicker.iIndexOfLastValue !== -1
-                    && KPITicker.iIndexOfStatus === -1
-                    && KPITicker.iPositiveThresholdValue !== -1
-                    && KPITicker.iNegativeThresholdValue !== -1) {
-                    iCurrentValue = <number>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
-                    iLastValue = <number>oDataView.categorical.values[KPITicker.iIndexOfLastValue].values[iIndex];
-                    iPThresholdValue = <number>oDataView.categorical.values[KPITicker.iPositiveThresholdValue].values[iIndex];
-                    iNThresholdValue = <number>oDataView.categorical.values[KPITicker.iNegativeThresholdValue].values[iIndex];
-                    // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
-                    const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
-                    if (iLastValue == null || iCurrentValue == null) {
-                        sValueDisplayed = '-';
-                        d3.select(sDivIdName).append('div')
-                            .classed(sClassNames, true)
-                            .attr('title', title + sValueDisplayed)
-                            .text(sValueDisplayed);
-                    } else {
-                        if (iLastValue === 0) {
-                            sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                        } else {
-                            sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                        }
-                        if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
-                            tStatus = 0;
-                            KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                        } else if (sValueDisplayed >= iPThresholdValue && iPThresholdValue !== 0) {
-                            tStatus = 1;
-                            KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                        } else if (sValueDisplayed <= (-iNThresholdValue) && iNThresholdValue !== 0) {
-                            tStatus = -1;
-                            KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                        } else {
-                            tStatus = 0;
-                            KPITicker.ThresholdtliChangeImage(KPITicker.oDataView, tStatus, iIndex, sDivIdName);
-                        }
-                    }
-                }
+        }
 
-                // tslint:disable-next-line:triple-equals
-                if (KPITicker.iIndexOfCurrentValue !== -1 && KPITicker.iIndexOfLastValue !== -1 && KPITicker.iEnableDelta == 1) {
-                    iCurrentValue = <number>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
-                    iLastValue = <number>oDataView.categorical.values[KPITicker.iIndexOfLastValue].values[iIndex];
-                    // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
-                    const title: string = 'KPI Change Percentage: ';
-                    if (iLastValue == null || iCurrentValue == null) {
-                        sValueDisplayed = '-';
-                        d3.select(sDivIdName).append('div')
-                            .classed(sClassNames, true)
-                            .attr('title', title + sValueDisplayed)
-                            .text(sValueDisplayed);
-                    } else {
-                        if (iLastValue === 0) {
-                            sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
-                        } else {
-                            sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
-                        }
-                        const openBracket: string = '(';
-                        const closeBracket: string = ') ';
-                        const percent: string = '%';
-                        d3.select(sDivIdName).append('div')
-                            .classed(sClassNames, true)
-                            .attr('title', title + sValueDisplayed + percent)
-                            .text(openBracket + sValueDisplayed + percent + closeBracket);
-                    }
+        // subfunctionality of appendData method
+        // when both current, last, negative data bag were selected and when status, positive threshold data bag were not selected
+        private static perChangeCurrLastNeg (oDataView: DataView,sClassNames: string, iIndicator: number, iIndex: number, sDivIdName: string): void {
+            let sValueDisplayed: any;
+            let iCurrentValue: number;
+            let iLastValue: number;
+            let tStatus: number;
+            // this variable stores the percenatge from positive, negative threshold data bag
+            let iPThresholdValue: number = 0;
+            let iNThresholdValue: number = 0;
 
-                }
-                // tslint:disable-next-line:triple-equals
-            } else if (iIndicator == 1) {  // if iIndicator is 1, the value to be displayed is KPI Change Value
-                // tslint:disable-next-line:triple-equals
-                if (KPITicker.iIndexOfLastValue != -1 && KPITicker.iIndexOfCurrentValue != -1) {
-                    const title: string = 'KPI Change Value: ';
-                    iCurrentValue = <number>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
-                    iLastValue = <number>oDataView.categorical.values[KPITicker.iIndexOfLastValue].values[iIndex];
-                    if (iCurrentValue == null) {
-                        sValueDisplayed = iLastValue;
-                    } else if (iLastValue == null) {
-                        sValueDisplayed = iCurrentValue;
-                    } else {
-                        sValueDisplayed = iCurrentValue - iLastValue;
-                    }
-                    // If display unit is selected as Auto
-                    let displayVal: number = 0;
-                    // tslint:disable-next-line:no-any
-                    let tempdata: any = sValueDisplayed;
-                    tempdata = Math.round(tempdata);
-                    tempdata = Math.abs(tempdata);
-                    const valLen: number = String(tempdata).length;
-                    if (KPITicker.iDisplayUnits === 0) {
-                        if (valLen > 9) {
-                            displayVal = 1e9;
-                        } else if (valLen <= 9 && valLen > 6) {
-                            displayVal = 1e6;
-                        } else if (valLen <= 6 && valLen >= 4) {
-                            displayVal = 1e3;
-                        } else {
-                            displayVal = 10;
-                        }
-                    }
-                    // Apply formatting according to the display unit and decimal places
-                    const formatter: IValueFormatter = ValueFormatter.create({
-                        format: KPITicker.oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].source.format ?
-                            KPITicker.oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].source.format :
-                            ValueFormatter.DefaultNumericFormat,
-                        value: KPITicker.iDisplayUnits === 0 ? displayVal : KPITicker.iDisplayUnits,
-                        precision: KPITicker.iDecimalPlaces
-                    });
-                    sValueDisplayed = formatter.format(sValueDisplayed);
+            iCurrentValue = <number>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
+            iLastValue = <number>oDataView.categorical.values[Visual.iIndexOfLastValue].values[iIndex];
+            iNThresholdValue = <number>oDataView.categorical.values[Visual.iNegativeThresholdValue].values[iIndex];
+            // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
+            const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
+            if (this.iPositiveThresholdPercentage !== null) {
+                if (iLastValue == null || iCurrentValue == null) {
+                    sValueDisplayed = '-';
                     d3.select(sDivIdName).append('div')
                         .classed(sClassNames, true)
                         .attr('title', title + sValueDisplayed)
                         .text(sValueDisplayed);
+                } else {
+                    if (iLastValue === 0) {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                    } else {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                    }
+                    if (sValueDisplayed === '0.00') {   // when svaluedisplayed is equal to zero then neutral sign will applied
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed >= this.iPositiveThresholdPercentage && this.iPositiveThresholdPercentage !== 0) {
+                        tStatus = 1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed <= (-iNThresholdValue) && iNThresholdValue !== 0) {
+                        tStatus = -1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else {
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    }
+                }
+            } else {
+                if (iLastValue == null || iCurrentValue == null) {
+                    sValueDisplayed = '-';
+                    d3.select(sDivIdName).append('div')
+                        .classed(sClassNames, true)
+                        .attr('title', title + sValueDisplayed)
+                        .text(sValueDisplayed);
+                } else {
+                    if (iLastValue === 0) {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                    } else {
+                        sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                    }
+                    if (sValueDisplayed === '0.00') {   // when svaluedisplayed is equal to zero then neutral sign will applied
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed <= (-iNThresholdValue) && iNThresholdValue !== 0) {
+                        tStatus = -1;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    } else if (sValueDisplayed < 0 && sValueDisplayed > (-this.iNegativeThresholdPercentage)) {
+                        tStatus = 0;
+                        Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                    }
                 }
             }
         }
+
+        // subfunctionality of appendData method
+        // when both current, last, positive, negative threshold data bag were selected and when status data bag were not selected
+        private static perChangeCurrLastPosNeg (oDataView: DataView,sClassNames: string, iIndicator: number, iIndex: number, sDivIdName: string): void {
+            // tslint:disable-next-line:no-any
+            let sValueDisplayed: any;
+            let iCurrentValue: number;
+            let iLastValue: number;
+            let tStatus: number;
+            // this variable stores the percenatge from positive, negative threshold data bag
+            let iPThresholdValue: number = 0;
+            let iNThresholdValue: number = 0;
+
+            iCurrentValue = <number>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
+            iLastValue = <number>oDataView.categorical.values[Visual.iIndexOfLastValue].values[iIndex];
+            iPThresholdValue = <number>oDataView.categorical.values[Visual.iPositiveThresholdValue].values[iIndex];
+            iNThresholdValue = <number>oDataView.categorical.values[Visual.iNegativeThresholdValue].values[iIndex];
+            // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
+            const title: string = 'KPI Change Value: '; // difference value of kpi current value and kpi last value
+            if (iLastValue == null || iCurrentValue == null) {
+                sValueDisplayed = '-';
+                d3.select(sDivIdName).append('div')
+                    .classed(sClassNames, true)
+                    .attr('title', title + sValueDisplayed)
+                    .text(sValueDisplayed);
+            } else {
+                if (iLastValue === 0) {
+                    sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                } else {
+                    sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                }
+                if (sValueDisplayed === '0.00') { // when svaluedisplayed is equal to zero then neutral sign will applied
+                    tStatus = 0;
+                    Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                } else if (sValueDisplayed >= iPThresholdValue && iPThresholdValue !== 0) {
+                    tStatus = 1;
+                    Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                } else if (sValueDisplayed <= (-iNThresholdValue) && iNThresholdValue !== 0) {
+                    tStatus = -1;
+                    Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                } else {
+                    tStatus = 0;
+                    Visual.hresholdtliChangeImage(Visual.oDataView, tStatus, iIndex, sDivIdName);
+                }
+            }
+        }
+
+        // subfunctionality of appendData method
+        // when both current, last, threshold data bag were selected and when Delta is enabled
+        private static perChangeCurrLastDel(oDataView: DataView,sClassNames: string, iIndicator: number, iIndex: number, sDivIdName: string): void {
+
+            let sValueDisplayed: any;
+            let iCurrentValue: number;
+            let iLastValue: number;
+            let tStatus: number;
+            // this variable stores the percenatge from positive, negative threshold data bag
+            let iPThresholdValue: number = 0;
+            let iNThresholdValue: number = 0;
+
+            iCurrentValue = <number>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
+            iLastValue = <number>oDataView.categorical.values[Visual.iIndexOfLastValue].values[iIndex];
+            // if the last KPI value is 0, then the percentage change should be calculated with denominator as 1
+            const title: string = 'KPI Change Percentage: ';
+            if (iLastValue == null || iCurrentValue == null) {
+                sValueDisplayed = '-';
+                d3.select(sDivIdName).append('div')
+                    .classed(sClassNames, true)
+                    .attr('title', title + sValueDisplayed)
+                    .text(sValueDisplayed);
+            } else {
+                if (iLastValue === 0) {
+                    sValueDisplayed = (((iCurrentValue - iLastValue) / 1) * 100).toFixed(2);
+                } else {
+                    sValueDisplayed = (((iCurrentValue - iLastValue) / Math.abs(iLastValue)) * 100).toFixed(2);
+                }
+                const openBracket: string = '(';
+                const closeBracket: string = ') ';
+                const percent: string = '%';
+                d3.select(sDivIdName).append('div')
+                    .classed(sClassNames, true)
+                    .attr('title', title + sValueDisplayed + percent)
+                    .text(openBracket + sValueDisplayed + percent + closeBracket);
+            }
+        }
+
         /*
         * method to decide what indicator is to be used on the basis of status and display statistics about the kpi
         * @param {DataView} oDataView - DataView of the visual
@@ -1352,34 +1536,34 @@ module powerbi.extensibility.visual {
             let iTliStatus: number;
             let sKPICurrentValue: string;
             // if KPI Value column is selected populate it
-            if (KPITicker.iIndexOfCurrentValue !== -1) {
-                sKPICurrentValue = <string>oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].values[iIndex];
+            if (Visual.iIndexOfCurrentValue !== -1) {
+                sKPICurrentValue = <string>oDataView.categorical.values[Visual.iIndexOfCurrentValue].values[iIndex];
                 // if display unit for current value is selected as Auto
-                if (KPITicker.iDisplayUnits === 0) {
-                    KPITicker.displayVal = 0;
+                if (Visual.iDisplayUnits === 0) {
+                    Visual.displayVal = 0;
                     // tslint:disable-next-line:no-any
                     let tempdata: any = sKPICurrentValue;
                     tempdata = Math.round(tempdata);
                     tempdata = Math.abs(tempdata);
                     const valLen: number = String(tempdata).length;
                     if (valLen > 9) {
-                        KPITicker.displayVal = 1e9;
+                        Visual.displayVal = 1e9;
                     } else if (valLen <= 9 && valLen > 6) {
-                        KPITicker.displayVal = 1e6;
+                        Visual.displayVal = 1e6;
                     } else if (valLen <= 6 && valLen >= 4) {
-                        KPITicker.displayVal = 1e3;
+                        Visual.displayVal = 1e3;
                     } else {
-                        KPITicker.displayVal = 10;
+                        Visual.displayVal = 10;
                     }
                 }
 
                 // Apply formatting according to the display unit and decimal places
-                const formatter: IValueFormatter = ValueFormatter.create({
-                    format: KPITicker.oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].source.format ?
-                        KPITicker.oDataView.categorical.values[KPITicker.iIndexOfCurrentValue].source.format :
-                        ValueFormatter.DefaultNumericFormat,
-                    value: KPITicker.iDisplayUnits === 0 ? KPITicker.displayVal : KPITicker.iDisplayUnits,
-                    precision: KPITicker.iDecimalPlaces
+                const formatter: IValueFormatter = valueFormatter.create({
+                    format: Visual.oDataView.categorical.values[Visual.iIndexOfCurrentValue].source.format ?
+                        Visual.oDataView.categorical.values[Visual.iIndexOfCurrentValue].source.format :
+                        valueFormatter.DefaultNumericFormat,
+                    value: Visual.iDisplayUnits === 0 ? Visual.displayVal : Visual.iDisplayUnits,
+                    precision: Visual.iDecimalPlaces
                 });
                 sKPICurrentValue = formatter.format(sKPICurrentValue);
                 const title: string = 'KPI Current Value: ';
@@ -1392,67 +1576,67 @@ module powerbi.extensibility.visual {
                 }
             }
             // populate the other details on the basis of selection of Status column
-            if (KPITicker.iIndexOfStatus !== -1) {
+            if (Visual.iIndexOfStatus !== -1) {
                 // storing the value of status of current data to nTliStatus
-                iTliStatus = Number(oDataView.categorical.values[KPITicker.iIndexOfStatus].values[iIndex]);
+                iTliStatus = Number(oDataView.categorical.values[Visual.iIndexOfStatus].values[iIndex]);
                 switch (iTliStatus) {
 
                     // when nTliStatus is 0 that is no change therefore neutral value
                     case 0:
-                        if (KPITicker.iIndexOfCurrentValue !== -1) {
+                        if (Visual.iIndexOfCurrentValue !== -1) {
                             d3.select(sDivIdName).append('div').classed('neutral', true).classed('indicator', true)
                                 .attr('title', 'Neutral indicator');
                         }
-                        KPITicker.appendData(oDataView, `tliChangePriceNeutral tliChangePrice`, 1, iIndex, sDivIdName);
-                        KPITicker.appendData(oDataView, `tliChangeNeutral tliChange`, 0, iIndex, sDivIdName);
+                        Visual.appendData(oDataView, `tliChangePriceNeutral tliChangePrice`, 1, iIndex, sDivIdName);
+                        Visual.appendData(oDataView, `tliChangeNeutral tliChange`, 0, iIndex, sDivIdName);
                         break;
                     // when nTliStatus is 1 that is positive change therefore positive value
                     case 1:
-                        if (KPITicker.iIndexOfCurrentValue !== -1) {
+                        if (Visual.iIndexOfCurrentValue !== -1) {
                             d3.select(sDivIdName).append('div').classed('arrowUp', true).classed('arrow', true)
                                 .attr('title', 'Positive indicator');
                         }
-                        KPITicker.appendData(oDataView, `tliChangePricePositive tliChangePrice`, 1, iIndex, sDivIdName);
-                        KPITicker.appendData(oDataView, `tliChangePositive tliChange`, 0, iIndex, sDivIdName);
+                        Visual.appendData(oDataView, `tliChangePricePositive tliChangePrice`, 1, iIndex, sDivIdName);
+                        Visual.appendData(oDataView, `tliChangePositive tliChange`, 0, iIndex, sDivIdName);
                         break;
                     // when nTliStatus is -1 that is negative change therefore negative value
                     case -1:
-                        if (KPITicker.iIndexOfCurrentValue !== -1) {
+                        if (Visual.iIndexOfCurrentValue !== -1) {
                             d3.select(sDivIdName).append('div').classed('arrowDown', true).classed('arrow', true)
                                 .attr('title', 'Negative indicator');
                         }
-                        KPITicker.appendData(oDataView, `tliChangePriceNegative tliChangePrice`, 1, iIndex, sDivIdName);
-                        KPITicker.appendData(oDataView, `tliChangeNegative tliChange`, 0, iIndex, sDivIdName);
+                        Visual.appendData(oDataView, `tliChangePriceNegative tliChangePrice`, 1, iIndex, sDivIdName);
+                        Visual.appendData(oDataView, `tliChangeNegative tliChange`, 0, iIndex, sDivIdName);
                         break;
                     default:
                         break;
                 }
-            } else { // if KPITIcker.iIndexOfStatus is -1
+            } else { // if Visual.iIndexOfStatus is -1
                 // to append indicators before kpi change value
-                KPITicker.appendData(oDataView, `tliChange`, 0, iIndex, sDivIdName);
-                KPITicker.appendData(oDataView, `tliChangePrice`, 1, iIndex, sDivIdName);
+                Visual.appendData(oDataView, `tliChange`, 0, iIndex, sDivIdName);
+                Visual.appendData(oDataView, `tliChangePrice`, 1, iIndex, sDivIdName);
             }
         }
         // when status column is not selected depending on the user given threshold percentage this function will be called
-        private static ThresholdtliChangeImage(oDataView: DataView, tStatus: number, iIndex: number, sDivIdName: string): void {
+        private static hresholdtliChangeImage(oDataView: DataView, tStatus: number, iIndex: number, sDivIdName: string): void {
             switch (tStatus) {
                 // when nTliStatus is 0 that is no change therefore neutral value
                 case 0:
-                    if (KPITicker.iIndexOfCurrentValue !== -1) {
+                    if (Visual.iIndexOfCurrentValue !== -1) {
                         d3.select(sDivIdName).append('div').classed('neutral', true).classed('indicator', true)
                             .attr('title', 'Neutral indicator');
                     }
                     break;
                 // when nTliStatus is 1 that is positive change therefore positive value
                 case 1:
-                    if (KPITicker.iIndexOfCurrentValue !== -1) {
+                    if (Visual.iIndexOfCurrentValue !== -1) {
                         d3.select(sDivIdName).append('div').classed('arrowUp', true).classed('arrow', true)
                             .attr('title', 'Positive indicator');
                     }
                     break;
                 // when nTliStatus is -1 that is negative change therefore negative value
                 case -1:
-                    if (KPITicker.iIndexOfCurrentValue !== -1) {
+                    if (Visual.iIndexOfCurrentValue !== -1) {
                         d3.select(sDivIdName).append('div').classed('arrowDown', true).classed('arrow', true)
                             .attr('title', 'Negative indicator');
                     }
@@ -1475,85 +1659,85 @@ module powerbi.extensibility.visual {
             const className: string = '.tliName';
             const tliName: string = 'tliName';
             // populate name if KPI Name column is selected
+            //AK47
+            if (Visual.iResponsive) {
 
-            if (KPITicker.iResponsive) {
-
-                if (KPITicker.iVerticalStack) {
-                    if (KPITicker.iIndexOfName !== -1) {
+                if (Visual.iVerticalStack) {
+                    if (Visual.iIndexOfName !== -1) {
                         d3.select(sDivIdName).append('div').classed('tliName', true)
                             .style({
-                                'text-align': KPITicker.iNameAlignment, width: `${KPITicker.iMaxDynamicWidthVertical -
-                                    KPITicker.iMarginForKPIName}px`
+                                'text-align': Visual.iNameAlignment, width: `${Visual.iMaxDynamicWidthVertical -
+                                    Visual.iMarginForKPIName}px`
                             })
                             .classed(tliName + iIndex, true)
                             .style({
-                                'text-align': KPITicker.iNameAlignment, width: `${KPITicker.iMaxDynamicWidthVertical -
-                                    KPITicker.iMarginForKPIName}px`
+                                'text-align': Visual.iNameAlignment, width: `${Visual.iMaxDynamicWidthVertical -
+                                    Visual.iMarginForKPIName}px`
                             })
                             .style('height', '35px')
                             .style('padding-top', '6px')
-                            .text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex])
-                            .attr('title', <string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
-                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
+                            .text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex])
+                            .attr('title', <string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
+                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
                     }
-                    KPITicker.tliChangeImage(KPITicker.oDataView, iIndex, sDivIdName);
+                    Visual.tliChangeImage(Visual.oDataView, iIndex, sDivIdName);
                 } else {
-                    if (KPITicker.iIndexOfName !== -1) {
+                    if (Visual.iIndexOfName !== -1) {
                         d3.select(sDivIdName).append('div').classed('tliName', true)
                             .style({
-                                width: `${((KPITicker.dynamicWidth - KPITicker.iMarginForScroll * 2) / KPITicker.iNumberOfKPI)
-                                    - KPITicker.iMarginForKPIName}px`
-                                , 'text-align': KPITicker.iNameAlignment
+                                width: `${((Visual.dynamicWidth - Visual.iMarginForScroll * 2) / Visual.iNumberOfKPI)
+                                    - Visual.iMarginForKPIName}px`
+                                , 'text-align': Visual.iNameAlignment
                             })
                             .classed(tliName + iIndex, true)
                             .style('height', '35px')
                             .style('padding-top', '6px')
                             .style({
-                                width: `${((KPITicker.dynamicWidth - KPITicker.iMarginForScroll * 2) / KPITicker.iNumberOfKPI)
-                                    - KPITicker.iMarginForKPIName}px`
-                                , 'text-align': KPITicker.iNameAlignment
+                                width: `${((Visual.dynamicWidth - Visual.iMarginForScroll * 2) / Visual.iNumberOfKPI)
+                                    - Visual.iMarginForKPIName}px`
+                                , 'text-align': Visual.iNameAlignment
                             })
 
-                            .text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex])
-                            .attr('title', <string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
-                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
+                            .text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex])
+                            .attr('title', <string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
+                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
                     }
-                    KPITicker.tliChangeImage(KPITicker.oDataView, iIndex, sDivIdName);
+                    Visual.tliChangeImage(Visual.oDataView, iIndex, sDivIdName);
                 }
             } else {
-                if (KPITicker.iVerticalStack) {
-                    if (KPITicker.iIndexOfName !== -1) {
+                if (Visual.iVerticalStack) {
+                    if (Visual.iIndexOfName !== -1) {
                         d3.select(sDivIdName).append('div').classed('tliName', true)
                             .style({
-                                width: `${(KPITicker.iWidthOfTiles - KPITicker.iMarginForKPIName)}px`,
-                                'text-align': KPITicker.iNameAlignment
+                                width: `${(Visual.iWidthOfTiles - Visual.iMarginForKPIName)}px`,
+                                'text-align': Visual.iNameAlignment
                             })
                             .classed(tliName + iIndex, true)
                             .style('height', '35px')
                             .style('padding-top', '6px')
                             .style({
-                                width: `${(KPITicker.iWidthOfTiles - KPITicker.iMarginForKPIName)}px`,
-                                'text-align': KPITicker.iNameAlignment
+                                width: `${(Visual.iWidthOfTiles - Visual.iMarginForKPIName)}px`,
+                                'text-align': Visual.iNameAlignment
                             })
-                            .text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex])
-                            .attr('title', <string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
-                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
+                            .text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex])
+                            .attr('title', <string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
+                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
                     }
-                    KPITicker.tliChangeImage(KPITicker.oDataView, iIndex, sDivIdName);
+                    Visual.tliChangeImage(Visual.oDataView, iIndex, sDivIdName);
                 } else {
-                    if (KPITicker.iIndexOfName !== -1) {
+                    if (Visual.iIndexOfName !== -1) {
                         d3.select(sDivIdName).append('div').classed('tliName', true)
-                            .style({ width: `${(KPITicker.iWidthOfTiles - KPITicker.iMarginForKPIName)}px` })
-                            .style({ 'text-align': KPITicker.iNameAlignment })
+                            .style({ width: `${(Visual.iWidthOfTiles - Visual.iMarginForKPIName)}px` })
+                            .style({ 'text-align': Visual.iNameAlignment })
                             .style('height', '35px')
                             .style('padding-top', '6px')
                             .classed(tliName + iIndex, true)
-                            .style({ width: `${(KPITicker.iWidthOfTiles - KPITicker.iMarginForKPIName)}px` })
-                            .text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex])
-                            .attr('title', <string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
-                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[KPITicker.iIndexOfName].values[iIndex]);
+                            .style({ width: `${(Visual.iWidthOfTiles - Visual.iMarginForKPIName)}px` })
+                            .text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex])
+                            .attr('title', <string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
+                        d3.select(className + iIndex).text(<string>oDataView.categorical.categories[Visual.iIndexOfName].values[iIndex]);
                     }
-                    KPITicker.tliChangeImage(KPITicker.oDataView, iIndex, sDivIdName);
+                    Visual.tliChangeImage(Visual.oDataView, iIndex, sDivIdName);
                 }
             }
         }
@@ -1570,137 +1754,141 @@ module powerbi.extensibility.visual {
             let iStartPoint: number;
             let iEndPoint: number;
             let iIndex: number = 0;
-            sClassOfContainer = `kpi${KPITicker.iNumberOfKPI}`;
+            sClassOfContainer = `kpi${Visual.iNumberOfKPI}`;
             // append the wrapper with appropriate id to "wrapper" div and then change
             // its top so that it is below the existing wrapper
             // When responsive is turned on, assign dynamic height and width
-            if (KPITicker.iResponsive) {
-                if (KPITicker.iAnimationStyle !== 'fade') {
-                    if (KPITicker.iVerticalStack) {
-                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
-                            .css({
-                                height: KPITicker.dynamicHeight - KPITicker.iMarginForScroll * 2,
-                                width: KPITicker.iMaxDynamicWidthVertical
-                            });
-                        if (KPITicker.iHorizontalScroll) {
-                            $(`#${sWrapperName}`).css('left', `${KPITicker.iMaxDynamicWidthVertical}px`);
-                        } else {
-                            $(`#${sWrapperName}`).css('top', `${KPITicker.dynamicHeight}px`);
-                        }
-                    } else {
-                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
-                            .css({
-                                height: KPITicker.iMinHeightOfTilesHorizontal,
-                                width: KPITicker.dynamicWidth - KPITicker.iMarginForScroll * 2
-                            });
-                        if (KPITicker.iHorizontalScroll) {
-                            $(`#${sWrapperName}`).css('left', `${KPITicker.dynamicWidth}px`);
-                        } else {
-                            $(`#${sWrapperName}`).css('top', `${KPITicker.iMinHeightOfTilesHorizontal}px`);
-                        }
-                    }
-                } else {
-                    if (KPITicker.iVerticalStack) {
-                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
-                            .css({ height: KPITicker.dynamicHeight - KPITicker.iMarginForScroll * 2 });
-                    } else {
-                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
-                            .css({
-                                height: KPITicker.iMinHeightOfTilesHorizontal,
-                                width: KPITicker.dynamicWidth - KPITicker.iMarginForScroll * 2
-                            });
-                    }
-                    $(`#${sWrapperName}`).addClass('initialWrapper');
-                    $(`#${sWrapperName}`).hide().fadeIn(KPITicker.iFadeInDuration);
-                }
-            } else { // assign height and width according to the format pane
+            Visual.dynamicWrapper(sWrapperName);
 
-                if (KPITicker.iAnimationStyle !== 'fade') {
-                    if (KPITicker.iVerticalStack) {
-                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
-                            .css({
-                                height: (KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI)
-                                , width: KPITicker.iWidthOfTiles
-                            });
-                        if (KPITicker.iHorizontalScroll) {
-                            $(`#${sWrapperName}`)
-                                .css('padding-top', '6px')
-                                .css('left', `${KPITicker.iWidthOfTiles}px`);
-                        } else {
-                            $(`#${sWrapperName}`)
-                                .css('padding-top', '6px')
-                                .css('top', `${KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI}px`);
-                        }
-                    } else {
-
-                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
-                            .css({
-                                height: KPITicker.iHeightOfTiles,
-                                width: (KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI) + KPITicker.iBorderOfContainer
-                            });
-                        if (KPITicker.iHorizontalScroll) {
-                            $(`#${sWrapperName}`).css('left', `${KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI
-                                + KPITicker.iBorderOfContainer}px`);
-                        } else {
-                            $(`#${sWrapperName}`).css('top', `${KPITicker.iHeightOfTiles}px`);
-                        }
-                    }
-                } else {
-                    if (KPITicker.iVerticalStack) {
-                        $('<div>').attr('id', sWrapperName).css('padding-top', '6px').appendTo('#wrapper')
-                            .css({
-                                height: (KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI)
-                                , width: KPITicker.iWidthOfTiles
-                            });
-                    } else {
-                        $('<div>').attr('id', sWrapperName).css('padding-top', '6px').appendTo('#wrapper')
-                            .css({
-                                height: KPITicker.iHeightOfTiles,
-                                width: (KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI) + KPITicker.iBorderOfContainer
-                            });
-                    }
-                    $(`#${sWrapperName}`).addClass('initialWrapper');
-                    $(`#${sWrapperName}`).hide().fadeIn(KPITicker.iFadeInDuration);
-                }
-            }
             if (iWrapperID === 1) {
                 iStartPoint = 1;
-                iEndPoint = KPITicker.iNumberOfKPI;
+                iEndPoint = Visual.iNumberOfKPI;
             } else if (iWrapperID === 2) {
-                iStartPoint = KPITicker.iNumberOfKPI + 1;
-                iEndPoint = 2 * KPITicker.iNumberOfKPI;
+                iStartPoint = Visual.iNumberOfKPI + 1;
+                iEndPoint = 2 * Visual.iNumberOfKPI;
             }
             // append div to the wrapper just created on the basis of which wrapper id was created and the number of containers
             for (iIndex = iStartPoint; iIndex <= iEndPoint; iIndex++) {
 
                 sWrapperDivName = `container${iIndex}`;
-                if (KPITicker.iVerticalStack) {
-                    if (KPITicker.iResponsive) {
+                if (Visual.iVerticalStack) {
+                    if (Visual.iResponsive) {
                         $('<div>').attr('id', sWrapperDivName).appendTo(`#${sWrapperName}`)
                             .css({
-                                height: ((KPITicker.dynamicHeight - KPITicker.iMarginForScroll * 2) / KPITicker.iNumberOfKPI),
-                                width: KPITicker.iMaxDynamicWidthVertical
+                                height: ((Visual.dynamicHeight - Visual.iMarginForScroll * 2) / Visual.iNumberOfKPI),
+                                width: Visual.iMaxDynamicWidthVertical
                             })
                             .addClass('containers');
                     } else {
-                        //
                         $('<div>').attr('id', sWrapperDivName).appendTo(`#${sWrapperName}`)
                             .css({
-                                height: (KPITicker.iHeightOfTiles),
-                                width: KPITicker.iWidthOfTiles
+                                height: (Visual.iHeightOfTiles),
+                                width: Visual.iWidthOfTiles
                             })
                             .addClass('containers');
                     }
                 } else {
-                    if (KPITicker.iResponsive) {
+                    if (Visual.iResponsive) {
                         $('<div>').attr('id', sWrapperDivName).appendTo(`#${sWrapperName}`)
-                            .css('width', ((KPITicker.dynamicWidth - KPITicker.iMarginForScroll * 2) / KPITicker.iNumberOfKPI) - 1)
+                            .css('width', ((Visual.dynamicWidth - Visual.iMarginForScroll * 2) / Visual.iNumberOfKPI) - 1)
                             .addClass('containers');
                     } else {
                         $('<div>').attr('id', sWrapperDivName).appendTo(`#${sWrapperName}`)
-                            .css({ width: (KPITicker.iWidthOfTiles), height: KPITicker.iHeightOfTiles })
+                            .css({ width: (Visual.iWidthOfTiles), height: Visual.iHeightOfTiles })
                             .addClass('containers');
                     }
+                }
+            }
+        }
+
+        private static dynamicWrapper(sWrapperName: string) {
+            if (Visual.iResponsive) {
+                if (Visual.iAnimationStyle !== 'fade') {
+                    if (Visual.iVerticalStack) {
+                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
+                            .css({
+                                height: Visual.dynamicHeight - Visual.iMarginForScroll * 2,
+                                width: Visual.iMaxDynamicWidthVertical
+                            });
+                        if (Visual.iHorizontalScroll) {
+                            $(`#${sWrapperName}`).css('left', `${Visual.iMaxDynamicWidthVertical}px`);
+                        } else {
+                            $(`#${sWrapperName}`).css('top', `${Visual.dynamicHeight}px`);
+                        }
+                    } else {
+                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
+                            .css({
+                                height: Visual.iMinHeightOfTilesHorizontal,
+                                width: Visual.dynamicWidth - Visual.iMarginForScroll * 2
+                            });
+                        if (Visual.iHorizontalScroll) {
+                            $(`#${sWrapperName}`).css('left', `${Visual.dynamicWidth}px`);
+                        } else {
+                            $(`#${sWrapperName}`).css('top', `${Visual.iMinHeightOfTilesHorizontal}px`);
+                        }
+                    }
+                } else {
+                    if (Visual.iVerticalStack) {
+                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
+                            .css({ height: Visual.dynamicHeight - Visual.iMarginForScroll * 2 });
+                    } else {
+                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
+                            .css({
+                                height: Visual.iMinHeightOfTilesHorizontal,
+                                width: Visual.dynamicWidth - Visual.iMarginForScroll * 2
+                            });
+                    }
+                    $(`#${sWrapperName}`).addClass('initialWrapper');
+                    $(`#${sWrapperName}`).hide().fadeIn(Visual.iFadeInDuration);
+                }
+            } else { // assign height and width according to the format pane
+
+                if (Visual.iAnimationStyle !== 'fade') {
+                    if (Visual.iVerticalStack) {
+                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
+                            .css({
+                                height: (Visual.iHeightOfTiles * Visual.iNumberOfKPI)
+                                , width: Visual.iWidthOfTiles
+                            });
+                        if (Visual.iHorizontalScroll) {
+                            $(`#${sWrapperName}`)
+                                .css('padding-top', '6px')
+                                .css('left', `${Visual.iWidthOfTiles}px`);
+                        } else {
+                            $(`#${sWrapperName}`)
+                                .css('padding-top', '6px')
+                                .css('top', `${Visual.iHeightOfTiles * Visual.iNumberOfKPI}px`);
+                        }
+                    } else {
+
+                        $('<div>').attr('id', sWrapperName).appendTo('#wrapper')
+                            .css({
+                                height: Visual.iHeightOfTiles,
+                                width: (Visual.iWidthOfTiles * Visual.iNumberOfKPI) + Visual.iBorderOfContainer
+                            });
+                        if (Visual.iHorizontalScroll) {
+                            $(`#${sWrapperName}`).css('left', `${Visual.iWidthOfTiles * Visual.iNumberOfKPI
+                                + Visual.iBorderOfContainer}px`);
+                        } else {
+                            $(`#${sWrapperName}`).css('top', `${Visual.iHeightOfTiles}px`);
+                        }
+                    }
+                } else {
+                    if (Visual.iVerticalStack) {
+                        $('<div>').attr('id', sWrapperName).css('padding-top', '6px').appendTo('#wrapper')
+                            .css({
+                                height: (Visual.iHeightOfTiles * Visual.iNumberOfKPI)
+                                , width: Visual.iWidthOfTiles
+                            });
+                    } else {
+                        $('<div>').attr('id', sWrapperName).css('padding-top', '6px').appendTo('#wrapper')
+                            .css({
+                                height: Visual.iHeightOfTiles,
+                                width: (Visual.iWidthOfTiles * Visual.iNumberOfKPI) + Visual.iBorderOfContainer
+                            });
+                    }
+                    $(`#${sWrapperName}`).addClass('initialWrapper');
+                    $(`#${sWrapperName}`).hide().fadeIn(Visual.iFadeInDuration);
                 }
             }
         }
@@ -1710,6 +1898,18 @@ module powerbi.extensibility.visual {
         * The css is changed according to the formatting options
         * @param {number} cssDivStart - The id of div from which the wrapper starts
         */
+        private static width(w:number):number {
+            if(w>=190)
+                return w/2.5;
+            else if(w>=180 && w<190)
+                return w/3;
+            else if(w>=170 && w<180)
+                return w/3.5;
+            else if(w>=160 && w<170)   
+                return w/4;
+            else
+                return w/4.3;
+        }
         private static changeCSS(iCssDivStart: number): void {
             // change the css according to the number of KPI that are to be displayed at a time
             let iEndPoint: number = 0;
@@ -1718,12 +1918,12 @@ module powerbi.extensibility.visual {
             sPriceMarginLeft = '10px';
             // to decide how many div are there to change the css
             if (iCssDivStart === 1) {
-                iEndPoint = KPITicker.iNumberOfKPI;
+                iEndPoint = Visual.iNumberOfKPI;
             } else {
-                iEndPoint = 2 * KPITicker.iNumberOfKPI;
+                iEndPoint = 2 * Visual.iNumberOfKPI;
             }
             // change the values as per the number of containers selected in the format pane
-            switch (KPITicker.iNumberOfKPI) {
+            switch (Visual.iNumberOfKPI) {
 
                 case 1:
                     $('.tliName').addClass('tliNameKPIOne');
@@ -1743,70 +1943,68 @@ module powerbi.extensibility.visual {
                 default:
                     break;
             }
-
-            // tslint:disable-next-line:triple-equals
-            if (KPITicker.iEnableDelta == 1) {
-                KPITicker.iMaxCurrentValueWidth = $('.containers').width() / 3.8;
-                KPITicker.iMaxPriceChangeValueWidth = $('.containers').width() / 3.8;
-                KPITicker.iMaxDeltaWidth = $('.containers').width() / 4.159;
+            if (Visual.iEnableDelta == 1) {
+                Visual.iMaxCurrentValueWidth = $('.containers').width() / 3.8;
+                Visual.iMaxPriceChangeValueWidth = $('.containers').width() / 3.8;
+                Visual.iMaxDeltaWidth = this.width($('.containers').width());
             } else {
-                KPITicker.iMaxCurrentValueWidth = $('.containers').width() / 2.6;
-                KPITicker.iMaxPriceChangeValueWidth = $('.containers').width() / 2.6;
+                Visual.iMaxCurrentValueWidth = $('.containers').width() / 2.6;
+                Visual.iMaxPriceChangeValueWidth = $('.containers').width() / 2.6;
             }
             // change the background color of the containers on the basis of
             for (iIndex = iCssDivStart; iIndex <= iEndPoint; iIndex++) {
                 const sContainerId: string = `#container${iIndex}`;
-                $(sContainerId).css('background', <string>KPITicker.iBackgroundColor);
+                $(sContainerId).css('background', <string>Visual.iBackgroundColor);
             }
             // change the css on the basis of font size selected in format pane
-            $('.tliName').css('font-size', `${KPITicker.iNameFontSize}px`);
-            $('.tliPrice').css('font-size', `${KPITicker.iValueFontSize}px`);
-            $('.tliPrice').css('max-width', `${KPITicker.iMaxCurrentValueWidth}px`);
-            $('.tliChangePrice').css('font-size', `${KPITicker.iValueFontSize}px`);
-            $('.tliChangePrice').css('max-width', `${KPITicker.iMaxPriceChangeValueWidth}px`);
-            $('.tliChange').css('font-size', `${KPITicker.iValueFontSize}px`);
+            $('.tliName').css('font-size', `${Visual.iNameFontSize}px`);
+            $('.tliPrice').css('font-size', `${Visual.iValueFontSize}px`);
+            $('.tliPrice').css('max-width', `${Visual.iMaxCurrentValueWidth}px`);
+            $('.tliChangePrice').css('font-size', `${Visual.iValueFontSize}px`);
+            $('.tliChangePrice').css('max-width', `${Visual.iMaxPriceChangeValueWidth}px`);
+            $('.tliChange').css('font-size', `${Visual.iValueFontSize}px`);
             // change the css on the basis of font color selected in format pane
-            $('.tliName').css('color', <string>KPITicker.iNameFontColor);
-            $('.tliPrice').css('color', <string>KPITicker.iValueFontColor);
+            $('.tliName').css('color', <string>Visual.iNameFontColor);
+            $('.tliPrice').css('color', <string>Visual.iValueFontColor);
             // fontfamily
-            $('.tliName').css('font-family', <string>KPITicker.iNameFontFamily);
-            $('.tliPrice').css('font-family', <string>KPITicker.iValueFontFamily);
-            $('.tliChange').css('max-width', `${KPITicker.iMaxDeltaWidth}px`);
-            $('.tliChange').css('font-family', <string>KPITicker.iValueFontFamily);
-            $('.tliChangePrice').css('font-family', <string>KPITicker.iValueFontFamily);
+            $('.tliName').css('font-family', <string>Visual.iNameFontFamily);
+            $('.tliPrice').css('font-family', <string>Visual.iValueFontFamily);
+            $('.tliChange').css('max-width', `${Visual.iMaxDeltaWidth}px`);
+            $('.tliChange').css('font-family', <string>Visual.iValueFontFamily);
+            $('.tliChangePrice').css('font-family', <string>Visual.iValueFontFamily);
             // change the color of indicators and the font color as per the selection in format pane if the Status column is selected
-            if (KPITicker.iIndexOfStatus !== -1) {
-                $('.arrowDown').css('margin-bottom', `${KPITicker.iValueFontSize - 10}px`);
-                $('.arrowUp').css('margin-bottom', `${KPITicker.iValueFontSize - 10}px`);
-                $('.neutral').css('margin-bottom', `${KPITicker.iValueFontSize - 10}px`);
-                $('.arrowDown').css('border-top-color', <string>KPITicker.iNegativeIndicatorColor);
-                $('.tliChangeNegative').css('color', <string>KPITicker.iNegativeIndicatorColor);
-                $('.tliChangePriceNegative').css('color', <string>KPITicker.iNegativeIndicatorColor);
-                $('.neutral').css('background', <string>KPITicker.iNeutralIndicatorColor);
-                $('.tliChangeNeutral').css('color', <string>KPITicker.iNeutralIndicatorColor);
-                $('.tliChangePriceNeutral').css('color', <string>KPITicker.iNeutralIndicatorColor);
-                $('.arrowUp').css('border-bottom-color', <string>KPITicker.iPositiveIndicatorColor);
-                $('.tliChangePositive').css('color', <string>KPITicker.iPositiveIndicatorColor);
-                $('.tliChangePricePositive').css('color', <string>KPITicker.iPositiveIndicatorColor);
+            if (Visual.iIndexOfStatus !== -1) {
+                $('.arrowDown').css('margin-bottom', `${Visual.iValueFontSize - 10}px`);
+                $('.arrowUp').css('margin-bottom', `${Visual.iValueFontSize - 10}px`);
+                $('.neutral').css('margin-bottom', `${Visual.iValueFontSize - 10}px`);
+                $('.arrowDown').css('border-top-color', <string>Visual.iNegativeIndicatorColor);
+                $('.tliChangeNegative').css('color', <string>Visual.iNegativeIndicatorColor);
+                $('.tliChangePriceNegative').css('color', <string>Visual.iNegativeIndicatorColor);
+                $('.neutral').css('background', <string>Visual.iNeutralIndicatorColor);
+                $('.tliChangeNeutral').css('color', <string>Visual.iNeutralIndicatorColor);
+                $('.tliChangePriceNeutral').css('color', <string>Visual.iNeutralIndicatorColor);
+                $('.arrowUp').css('border-bottom-color', <string>Visual.iPositiveIndicatorColor);
+                $('.tliChangePositive').css('color', <string>Visual.iPositiveIndicatorColor);
+                $('.tliChangePricePositive').css('color', <string>Visual.iPositiveIndicatorColor);
             } else {  // if Status column is not selected then the font color is same as KPI Name and KPI Value
-                $('.tliChange').css('color', <string>KPITicker.iValueFontColor);
-                $('.tliChangePrice').css('color', <string>KPITicker.iValueFontColor);
+                $('.tliChange').css('color', <string>Visual.iValueFontColor);
+                $('.tliChangePrice').css('color', <string>Visual.iValueFontColor);
             }
             // change the color of threshold indicator as per the selection in format pane if the Status column is not selected
-            if (KPITicker.iIndexOfStatus === -1 && KPITicker.iIndexOfCurrentValue !== -1 && KPITicker.iIndexOfLastValue !== -1) {
-                $('.arrowDown').css('border-top-color', <string>KPITicker.iNegativeThresholdIndicatorColor);
-                $('.tliChangeNegative').css('color', <string>KPITicker.iNegativeThresholdIndicatorColor);
-                $('.tliChangePriceNegative').css('color', <string>KPITicker.iNegativeThresholdIndicatorColor);
-                $('.neutral').css('background', <string>KPITicker.iNeutralThresholdIndicatorColor);
-                $('.tliChangeNeutral').css('color', <string>KPITicker.iNeutralThresholdIndicatorColor);
-                $('.tliChangePriceNeutral').css('color', <string>KPITicker.iNeutralThresholdIndicatorColor);
-                $('.arrowUp').css('border-bottom-color', <string>KPITicker.iPositiveThresholdIndicatorColor);
-                $('.tliChangePositive').css('color', <string>KPITicker.iPositiveThresholdIndicatorColor);
-                $('.tliChangePricePositive').css('color', <string>KPITicker.iPositiveThresholdIndicatorColor);
+            if (Visual.iIndexOfStatus === -1 && Visual.iIndexOfCurrentValue !== -1 && Visual.iIndexOfLastValue !== -1) {
+                $('.arrowDown').css('border-top-color', <string>Visual.iNegativeThresholdIndicatorColor);
+                $('.tliChangeNegative').css('color', <string>Visual.iNegativeThresholdIndicatorColor);
+                $('.tliChangePriceNegative').css('color', <string>Visual.iNegativeThresholdIndicatorColor);
+                $('.neutral').css('background', <string>Visual.iNeutralThresholdIndicatorColor);
+                $('.tliChangeNeutral').css('color', <string>Visual.iNeutralThresholdIndicatorColor);
+                $('.tliChangePriceNeutral').css('color', <string>Visual.iNeutralThresholdIndicatorColor);
+                $('.arrowUp').css('border-bottom-color', <string>Visual.iPositiveThresholdIndicatorColor);
+                $('.tliChangePositive').css('color', <string>Visual.iPositiveThresholdIndicatorColor);
+                $('.tliChangePricePositive').css('color', <string>Visual.iPositiveThresholdIndicatorColor);
             }
 
             // if KPI Value is not selected only show other data with appropriate margin
-            if (KPITicker.iIndexOfCurrentValue === -1) {
+            if (Visual.iIndexOfCurrentValue === -1) {
                 $('.tliChangePrice').css('margin-left', sPriceMarginLeft);
             }
         }
@@ -1816,55 +2014,55 @@ module powerbi.extensibility.visual {
         */
         private static addNextData(): void {
             // Reset currentPosition to 0, if it becomes negative
-            if (KPITicker.iCurrentPosition < 0) {
-                KPITicker.iCurrentPosition = 0;
+            if (Visual.iCurrentPosition < 0) {
+                Visual.iCurrentPosition = 0;
             }
             // add next data only if mouse is not on the wrapper
             if (!($('#wrapper').is(':hover'))) {
                 // flag to check if the index has exceeded the data length
-                KPITicker.bFlag = true;
-                KPITicker.bIsUpdated = false;
+                Visual.bFlag = true;
+                Visual.bIsUpdated = false;
                 let iDivStart: number = 0;
                 // to change the iCurrentPosition value
-                KPITicker.iCheckIndex = 0;
+                Visual.iCheckIndex = 0;
                 // to start with first value when div is empty but data is not available
-                KPITicker.iFlagIndex = 0;
-                if (KPITicker.iCurrentPosition !== KPITicker.oData.length - 1) {
-                    KPITicker.iCurrentPosition = KPITicker.iCurrentPosition % (KPITicker.oData.length - 1);
+                Visual.iFlagIndex = 0;
+                if (Visual.iCurrentPosition !== Visual.oData.length - 1) {
+                    Visual.iCurrentPosition = Visual.iCurrentPosition % (Visual.oData.length - 1);
                 }
                 // if wrapper1 is present, create wrapper2 and remove wrapper1 after animating it.
                 if ($('#wrapper1').length) {
-                    KPITicker.createWrapper(2);
-                    iDivStart = KPITicker.iNumberOfKPI + 1;
-                    KPITicker.populateWrapper(2, iDivStart);
+                    Visual.createWrapper(2);
+                    iDivStart = Visual.iNumberOfKPI + 1;
+                    Visual.populateWrapper(2, iDivStart);
                 } else { // if wrapper2 is present, create wrapper1 and remove wrapper2 after animating it.
-                    KPITicker.createWrapper(1);
+                    Visual.createWrapper(1);
                     iDivStart = 1;
-                    KPITicker.populateWrapper(1, iDivStart);
+                    Visual.populateWrapper(1, iDivStart);
                 }
                 // check if index has exceeded the length of data and populate accordingly
-                if (KPITicker.bFlag) {
-                    if (KPITicker.iCheckIndex === (KPITicker.oData.length - 1)) {
-                        KPITicker.iCurrentPosition = 0;
+                if (Visual.bFlag) {
+                    if (Visual.iCheckIndex === (Visual.oData.length - 1)) {
+                        Visual.iCurrentPosition = 0;
                     } else {
-                        KPITicker.iCurrentPosition += KPITicker.iNumberOfKPI;
-                        if (KPITicker.iCurrentPosition > KPITicker.oData.length - 1) {
-                            KPITicker.iCurrentPosition = 0;
+                        Visual.iCurrentPosition += Visual.iNumberOfKPI;
+                        if (Visual.iCurrentPosition > Visual.oData.length - 1) {
+                            Visual.iCurrentPosition = 0;
                         }
                     }
                 } else {
-                    KPITicker.iCurrentPosition = KPITicker.iFlagIndex;
+                    Visual.iCurrentPosition = Visual.iFlagIndex;
                 }
             }
             // convert duration into milliseconds
-            KPITicker.iDuration = KPITicker.iDurationS * 1000;
+            Visual.iDuration = Visual.iDurationS * 1000;
             // set the value of delay according to the duration of animation in a particukar ratio
 
-            if ((KPITicker.iAnimationStyle !== 'noAnimation') && (KPITicker.iShowCarousel)) {
-                KPITicker.iDelay = 3 * (KPITicker.iDuration / 10);
+            if ((Visual.iAnimationStyle !== 'noAnimation') && (Visual.iShowCarousel)) {
+                Visual.iDelay = 3 * (Visual.iDuration / 10);
             }
-            if (KPITicker.iShowAnimation === true) {
-                KPITicker.iInterval = window.setTimeout(KPITicker.addNextData, KPITicker.iDuration);
+            if (Visual.iShowAnimation === true) {
+                Visual.iInterval = window.setTimeout(Visual.addNextData, Visual.iDuration);
             }
         }
         /*
@@ -1875,27 +2073,27 @@ module powerbi.extensibility.visual {
         private static populateWrapper(iWrapperID: number, iDivStart: number): void {
             let iIndex: number;
             iIndex = 0;
-            KPITicker.iCheckIndex = 0;
-            KPITicker.iFlagIndex = 0;
-            KPITicker.bFlag = true;
-            for (iIndex = KPITicker.iCurrentPosition; iIndex < KPITicker.iCurrentPosition + KPITicker.iNumberOfKPI; iIndex++) {
-                KPITicker.iCheckIndex = iIndex;
-                if (iIndex <= KPITicker.oData.length - 1) {
-                    KPITicker.populateDiv(KPITicker.oDataView, iDivStart, iIndex);
+            Visual.iCheckIndex = 0;
+            Visual.iFlagIndex = 0;
+            Visual.bFlag = true;
+            for (iIndex = Visual.iCurrentPosition; iIndex < Visual.iCurrentPosition + Visual.iNumberOfKPI; iIndex++) {
+                Visual.iCheckIndex = iIndex;
+                if (iIndex <= Visual.oData.length - 1) {
+                    Visual.populateDiv(Visual.oDataView, iDivStart, iIndex);
                 } else {
-                    KPITicker.populateDiv(KPITicker.oDataView, iDivStart, KPITicker.iFlagIndex);
-                    KPITicker.iFlagIndex++;
-                    KPITicker.bFlag = false;
+                    Visual.populateDiv(Visual.oDataView, iDivStart, Visual.iFlagIndex);
+                    Visual.iFlagIndex++;
+                    Visual.bFlag = false;
                 }
                 iDivStart++;
             }
             // change the css according to the default value or the custom value selected by the user
-            KPITicker.changeCSS(iWrapperID);
+            Visual.changeCSS(iWrapperID);
 
             // animate the wrappers up only if it is not the first time
-            if (!KPITicker.bIsUpdated) {
-                if (KPITicker.iShowAnimation === true || KPITicker.iShowCarousel === true) {
-                    KPITicker.animateWrapper(iWrapperID);
+            if (!Visual.bIsUpdated) {
+                if (Visual.iShowAnimation === true || Visual.iShowCarousel === true) {
+                    Visual.animateWrapper(iWrapperID);
                 }
             }
         }
@@ -1914,146 +2112,148 @@ module powerbi.extensibility.visual {
                 sWrapperTop = '#wrapper1';
                 sWrapperBottom = '#wrapper2';
             }
-            if (KPITicker.iResponsive) { // if responsive is turned on
-                if (KPITicker.iAnimationStyle !== 'fade') { // if animationstyle is not fade
-                    if (KPITicker.iVerticalStack) {
-                        if (KPITicker.iHorizontalScroll) {
-                            $(sWrapperTop).animate({
-                                left: `-=${KPITicker.iMaxDynamicWidthVertical}px`
-                            },
-                                                   KPITicker.iDelay).dequeue();
-
-                            // tslint:disable-next-line:typedef
-                            $(sWrapperBottom).animate({
-                                left: `-=${KPITicker.iMaxDynamicWidthVertical}px`
-                            },
-                                // tslint:disable-next-line:typedef
-                                                      KPITicker.iDelay, function () {
-                                    KPITicker.iTimeout = window.setTimeout(function (): void {
-                                        $(sWrapperTop).remove();
-                                        clearTimeout(KPITicker.iTimeout);
-                                    },                                     KPITicker.iDelay);
-                                });
-                        } else {
-                            $(sWrapperTop).animate({ top: `-=${KPITicker.dynamicHeight}px` }, KPITicker.iDelay).dequeue();
-
-                            // tslint:disable-next-line:typedef
-                            $(sWrapperBottom).animate({ top: `-=${KPITicker.dynamicHeight}px` }, KPITicker.iDelay, function () {
-                                KPITicker.iTimeout = window.setTimeout(function (): void {
-                                    $(sWrapperTop).remove();
-                                    clearTimeout(KPITicker.iTimeout);
-                                },                                     KPITicker.iDelay);
-                            });
-                        }
-                    } else {
-                        if (KPITicker.iHorizontalScroll) {
-                            $(sWrapperTop).animate({
-                                left: `-=${KPITicker.dynamicWidth}px`
-                            },
-                                                   KPITicker.iDelay).dequeue();
-
-                            // tslint:disable-next-line:typedef
-                            $(sWrapperBottom).animate({
-                                left: `-=${KPITicker.dynamicWidth}px`
-                            },
-                                // tslint:disable-next-line:typedef
-                                                      KPITicker.iDelay, function () {
-                                    KPITicker.iTimeout = window.setTimeout(function (): void {
-                                        $(sWrapperTop).remove();
-                                        clearTimeout(KPITicker.iTimeout);
-                                    },                                     KPITicker.iDelay);
-                                });
-                        } else {
-                            $(sWrapperTop).animate({ top: `-=${KPITicker.iMinHeightOfTilesHorizontal}px` }, KPITicker.iDelay).dequeue();
-
-                            // tslint:disable-next-line:typedef
-                            $(sWrapperBottom).animate({ top: `-=${KPITicker.iMinHeightOfTilesHorizontal}px` }
-                                // tslint:disable-next-line:typedef
-                                ,                     KPITicker.iDelay, function () {
-                                    KPITicker.iTimeout = window.setTimeout(function (): void {
-                                        $(sWrapperTop).remove();
-                                        clearTimeout(KPITicker.iTimeout);
-                                    },                                     KPITicker.iDelay);
-                                });
-                        }
-                    }
-                } else { // if animation style is fade
-                    KPITicker.iTimeout = setTimeout(function (): void {
-                        $(sWrapperTop).remove();
-                        clearTimeout(KPITicker.iTimeout);
-                    });
-                }
+            if (Visual.iResponsive) { // if responsive is turned on
+                Visual.animateWrapperHelper(sWrapperTop,sWrapperBottom);
             } else { // When responsive is turned OFF
-                if (KPITicker.iAnimationStyle !== 'fade') {
-                    if (KPITicker.iVerticalStack) {
-                        if (KPITicker.iHorizontalScroll) {
+                if (Visual.iAnimationStyle !== 'fade') {
+                    if (Visual.iVerticalStack) {
+                        if (Visual.iHorizontalScroll) {
                             $(sWrapperTop).animate({
-                                left: `-=${KPITicker.iWidthOfTiles}px`
+                                left: `-=${Visual.iWidthOfTiles}px`
                             },
-                                                   KPITicker.iDelay).dequeue();
+                                                   Visual.iDelay).dequeue();
                             // tslint:disable-next-line:typedef
                             $(sWrapperBottom).animate({
-                                left: `-=${KPITicker.iWidthOfTiles}px`
+                                left: `-=${Visual.iWidthOfTiles}px`
                             },
                                 // tslint:disable-next-line:typedef
-                                                      KPITicker.iDelay, function () {
-                                    KPITicker.iTimeout = window.setTimeout(function (): void {
+                                                      Visual.iDelay, ()=> {
+                                    Visual.iTimeout = window.setTimeout(()=> {
                                         $(sWrapperTop).remove();
-                                        clearTimeout(KPITicker.iTimeout);
-                                    },                                     KPITicker.iDelay);
+                                        clearTimeout(Visual.iTimeout);
+                                    },                                     Visual.iDelay);
                                 });
                         } else {
-                            $(sWrapperTop).animate({ top: `-=${KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI}px` }
-                                ,                  KPITicker.iDelay).dequeue();
+                            $(sWrapperTop).animate({ top: `-=${Visual.iHeightOfTiles * Visual.iNumberOfKPI}px` }
+                                ,                  Visual.iDelay).dequeue();
 
                             // tslint:disable-next-line:typedef
-                            $(sWrapperBottom).animate({ top: `-=${KPITicker.iHeightOfTiles * KPITicker.iNumberOfKPI}px` },
+                            $(sWrapperBottom).animate({ top: `-=${Visual.iHeightOfTiles * Visual.iNumberOfKPI}px` },
                                 // tslint:disable-next-line:typedef
-                                                      KPITicker.iDelay, function () {
-                                    KPITicker.iTimeout = window.setTimeout(function (): void {
+                                                      Visual.iDelay, ()=> {
+                                    Visual.iTimeout = window.setTimeout(()=> {
                                         $(sWrapperTop).remove();
-                                        clearTimeout(KPITicker.iTimeout);
-                                    },                                     KPITicker.iDelay);
+                                        clearTimeout(Visual.iTimeout);
+                                    },                                     Visual.iDelay);
                                 });
                         }
                     } else {
-                        if (KPITicker.iHorizontalScroll) {
+                        if (Visual.iHorizontalScroll) {
                             $(sWrapperTop).animate({
-                                left: `-=${(KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI) + 10}px`
+                                left: `-=${(Visual.iWidthOfTiles * Visual.iNumberOfKPI) + 10}px`
                             },
-                                                   KPITicker.iDelay).dequeue();
+                                                   Visual.iDelay).dequeue();
 
                             // tslint:disable-next-line:typedef
                             $(sWrapperBottom).animate({
-                                left: `-=${(KPITicker.iWidthOfTiles * KPITicker.iNumberOfKPI) + 10}px`
+                                left: `-=${(Visual.iWidthOfTiles * Visual.iNumberOfKPI) + 10}px`
                             },
                                 // tslint:disable-next-line:typedef
-                                                      KPITicker.iDelay, function () {
-                                    KPITicker.iTimeout = window.setTimeout(function (): void {
+                                                      Visual.iDelay, ()=> {
+                                    Visual.iTimeout = window.setTimeout(()=> {
                                         $(sWrapperTop).remove();
-                                        clearTimeout(KPITicker.iTimeout);
-                                    },                                     KPITicker.iDelay);
+                                        clearTimeout(Visual.iTimeout);
+                                    },                                     Visual.iDelay);
                                 });
                         } else {
-                            $(sWrapperTop).animate({ top: `-=${KPITicker.iHeightOfTiles}px` }, KPITicker.iDelay).dequeue();
+                            $(sWrapperTop).animate({ top: `-=${Visual.iHeightOfTiles}px` }, Visual.iDelay).dequeue();
 
                             // tslint:disable-next-line:typedef
-                            $(sWrapperBottom).animate({ top: `-=${KPITicker.iHeightOfTiles}px` }, KPITicker.iDelay, function () {
-                                KPITicker.iTimeout = window.setTimeout(function (): void {
+                            $(sWrapperBottom).animate({ top: `-=${Visual.iHeightOfTiles}px` }, Visual.iDelay, ()=> {
+                                Visual.iTimeout = window.setTimeout(()=> {
                                     $(sWrapperTop).remove();
-                                    clearTimeout(KPITicker.iTimeout);
-                                },                                     KPITicker.iDelay);
+                                    clearTimeout(Visual.iTimeout);
+                                },                                     Visual.iDelay);
                             });
                         }
                     }
                 } else {
-                    KPITicker.iTimeout = setTimeout(function (): void {
+                    Visual.iTimeout = setTimeout(()=> {
                         $(sWrapperTop).remove();
-                        clearTimeout(KPITicker.iTimeout);
+                        clearTimeout(Visual.iTimeout);
                     });
                 }
             }
 
+        }
+
+        private static animateWrapperHelper(sWrapperTop: string, sWrapperBottom: string) {
+            if (Visual.iAnimationStyle !== 'fade') { // if animationstyle is not fade
+                if (Visual.iVerticalStack) {
+                    if (Visual.iHorizontalScroll) {
+                        $(sWrapperTop).animate({
+                            left: `-=${Visual.iMaxDynamicWidthVertical}px`
+                        },                                          Visual.iDelay).dequeue();
+
+                        // tslint:disable-next-line:typedef
+                        $(sWrapperBottom).animate({
+                            left: `-=${Visual.iMaxDynamicWidthVertical}px`
+                        },
+                            // tslint:disable-next-line:typedef
+                                                  Visual.iDelay, ()=> {
+                                Visual.iTimeout = window.setTimeout(()=> {
+                                    $(sWrapperTop).remove();
+                                    clearTimeout(Visual.iTimeout);
+                                },                                  Visual.iDelay);
+                            });
+                    } else {
+                        $(sWrapperTop).animate({ top: `-=${Visual.dynamicHeight}px` }, Visual.iDelay).dequeue();
+
+                        // tslint:disable-next-line:typedef
+                        $(sWrapperBottom).animate({ top: `-=${Visual.dynamicHeight}px` }, Visual.iDelay, ()=> {
+                            Visual.iTimeout = window.setTimeout(()=> {
+                                $(sWrapperTop).remove();
+                                clearTimeout(Visual.iTimeout);
+                            },                                     Visual.iDelay);
+                        });
+                    }
+                } else {
+                    if (Visual.iHorizontalScroll) {
+                        $(sWrapperTop).animate({
+                            left: `-=${Visual.dynamicWidth}px`
+                        },                       Visual.iDelay).dequeue();
+
+                        // tslint:disable-next-line:typedef
+                        $(sWrapperBottom).animate({
+                            left: `-=${Visual.dynamicWidth}px`
+                        },
+                            // tslint:disable-next-line:typedef
+                                                  Visual.iDelay, ()=> {
+                                Visual.iTimeout = window.setTimeout(()=> {
+                                    $(sWrapperTop).remove();
+                                    clearTimeout(Visual.iTimeout);
+                                },                                     Visual.iDelay);
+                            });
+                    } else {
+                        $(sWrapperTop).animate({ top: `-=${Visual.iMinHeightOfTilesHorizontal}px` }, Visual.iDelay).dequeue();
+
+                        // tslint:disable-next-line:typedef
+                        $(sWrapperBottom).animate({ top: `-=${Visual.iMinHeightOfTilesHorizontal}px` }
+                            // tslint:disable-next-line:typedef
+                            ,                     Visual.iDelay, ()=> {
+                                Visual.iTimeout = window.setTimeout(()=> {
+                                    $(sWrapperTop).remove();
+                                    clearTimeout(Visual.iTimeout);
+                                },                                     Visual.iDelay);
+                            });
+                    }
+                }
+            } else { // if animation style is fade
+                Visual.iTimeout = setTimeout(()=> {
+                    $(sWrapperTop).remove();
+                    clearTimeout(Visual.iTimeout);
+                });
+            }
         }
 
     }
