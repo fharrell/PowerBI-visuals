@@ -27,7 +27,7 @@ module powerbi.extensibility.visual {
 
     import valueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
     export module DataViewObjects {
-        /** Gets the value of the given object/property pair. */
+        // Gets the value of the given object/property pair
         export function getValue<T>(objects: DataViewObjects, propertyId: DataViewObjectPropertyIdentifier, defaultValue?: T): T {
 
             if (!objects) {
@@ -40,27 +40,23 @@ module powerbi.extensibility.visual {
             return DataViewObject.getValue(object, propertyId.propertyName, defaultValue);
         }
 
-        /** Gets an object from objects. */
+        // Gets an object from objects
         export function getObject(objects: DataViewObjects, objectName: string, defaultValue?: DataViewObject): DataViewObject {
             if (objects && objects[objectName]) {
-                const object: DataViewObject = <DataViewObject>objects[objectName];
-
-                return object;
+                return <DataViewObject>objects[objectName];
             } else {
                 return defaultValue;
             }
         }
 
-        /** Gets a map of user-defined objects. */
+        // Gets a map of user-defined objects.
         export function getUserDefinedObjects(objects: DataViewObjects, objectName: string): DataViewObjectMap {
             if (objects && objects[objectName]) {
-                const map: DataViewObjectMap = <DataViewObjectMap>objects[objectName];
-
-                return map;
+                return <DataViewObjectMap>objects[objectName];
             }
         }
 
-        /** Gets the solid color from a fill property. */
+        // Gets the solid color from a fill property
         export function getFillColor(
             objects: DataViewObjects, propertyId: DataViewObjectPropertyIdentifier, defaultColor?: string): string {
             const value: Fill = getValue(objects, propertyId);
@@ -86,7 +82,7 @@ module powerbi.extensibility.visual {
             return propertyValue;
         }
 
-        /** Gets the solid color from a fill property using only a propertyName */
+        // Gets the solid color from a fill property using only a propertyName
         export function getFillColorByPropertyName(objects: DataViewObjects, propertyName: string, defaultColor?: string): string {
             const value: Fill = DataViewObject.getValue(objects, propertyName);
             if (!value || !value.solid) {
@@ -202,6 +198,7 @@ module powerbi.extensibility.visual {
         private dynamicSettings: IDynamicTextSettings;
         private formatter: utils.formatting.IValueFormatter;
         private finalTextContainer: d3.Selection<HTMLElement>;
+        private events: IVisualEventService ;
         constructor(options: VisualConstructorOptions) {
             this.target = d3.select(options.element);
             this.target.style({
@@ -209,6 +206,7 @@ module powerbi.extensibility.visual {
                 cursor: 'default'
             });
             this.updateCount = 0;
+            this.events = options.host.eventService;
         }
 
         public pointToPixel(pt: number): string {
@@ -272,12 +270,10 @@ module powerbi.extensibility.visual {
                     }
 
                 }
-                const obj: IDynamicTextContainer = {
+                return {
                     textContainer: textValDynamicInput,
                     lengthContainer: valueLength
                 };
-
-                return obj;
             }
         }
 
@@ -301,6 +297,7 @@ module powerbi.extensibility.visual {
         }
 
         public update(options: VisualUpdateOptions): void {
+            this.events.renderingStarted(options);
             this.updateCount++;
             this.target.selectAll('.tw_value').remove();
             const dataView: DataView = this.dataViews = options.dataViews[0];
@@ -309,13 +306,8 @@ module powerbi.extensibility.visual {
             const errorMessageSettings: IErrorMessageSettings = this.getErrorMessages(dataView);
             this.dynamicSettings = this.getDynamicTextSettings(dataView);
             this.staticTextSettings = this.getStaticTextSettings(dataView);
-            const svgwidth: number = options.viewport.width;
-            const svglen: number = parseInt(svgwidth.toString(), 10);
-            const svgheight: number = options.viewport.height;
-            const svgheightlen: number = parseInt(svgheight.toString(), 10);
             let textValDynamicInput: string;
             let textValStaticInput: string;
-            let staticOriginaltext: string;
             if (this.updateCount === 1) {
                 textValStaticInput = this.staticTextSettings.postText === '-1' ?
                     textSettings.postText : this.staticTextSettings.postText;
@@ -324,10 +316,8 @@ module powerbi.extensibility.visual {
                     '' : this.staticTextSettings.postText;
             }
             this.staticTextSettings.postText = textValStaticInput;
-            staticOriginaltext = textValStaticInput;
             const valuesContainer: IDynamicTextContainer = this.getDynamicTextValue(dataView);
             textValDynamicInput = valuesContainer.textContainer;
-            const dynamicOriginaltext: string = textValDynamicInput;
             const textFontSize: number = textSettings.fontSize;
             const dynamictextFontFamily: string = this.dynamicSettings.fontFamily;
             const staticTextFontFamily: string = this.staticTextSettings.fontFamily;
@@ -363,7 +353,6 @@ module powerbi.extensibility.visual {
                     .style('color', '#777777');
             }
             this.finalTextContainer = d3.select('.tw_finalText').style('text-align', textSettings.alignment);
-
             let colonText: string;
             colonText = ': ';
             if (textValStatic !== '' && this.staticTextSettings.showColon) {
@@ -405,6 +394,7 @@ module powerbi.extensibility.visual {
                 this.getText(textValDynamic, dynfontStyleClass, textFontSize, dynamictextFontFamily,
                              this.dynamicSettings.backgroundcolor);
             }
+            this.events.renderingFinished(options);
         }
 
         private getText(text: string, fontStyleClass: string, textFontSize: number, textFontFamily: string, backgroundcolor: string): void {
@@ -619,7 +609,7 @@ module powerbi.extensibility.visual {
         }
 
         public destroy(): void {
-            //TODO: Perform any cleanup tasks here
+            // Perform any cleanup tasks here
         }
     }
 }
