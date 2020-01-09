@@ -1,8 +1,45 @@
+/*
+ *  Power BI Visual CLI
+ *
+ *  Copyright (c) Microsoft Corporation
+ *  All rights reserved.
+ *  MIT License
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the ''Software''), to deal
+ *  in the Software without restriction, including without limitation the rights
+ *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ *  copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in
+ *  all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ *  THE SOFTWARE.
+ */
+
 module powerbi.extensibility.visual {
-    import ValueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
+    import valueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
     import textMeasurementService = powerbi.extensibility.utils.formatting.textMeasurementService;
     import TextProperties = powerbi.extensibility.utils.formatting.TextProperties;
     import IValueFormatter = powerbi.extensibility.utils.formatting.IValueFormatter;
+    import tooltip = powerbi.extensibility.utils.tooltip;
+    import ITooltipServiceWrapper = powerbi.extensibility.utils.tooltip.ITooltipServiceWrapper;
+    import createTooltipServiceWrapper = powerbi.extensibility.utils.tooltip.createTooltipServiceWrapper;
+
+    export interface TooltipEventArgs<TData> {
+        data: TData;
+        coordinates: number[];
+        elementCoordinates: number[];
+        context: HTMLElement;
+        isTouchEvent: boolean;
+    }
     export interface IViewModel {
         value: number;
         targetValue?: number;
@@ -26,17 +63,15 @@ module powerbi.extensibility.visual {
         toolTipInfo: ITooltipDataItem[];
     }
     export class CylindricalGauge implements IVisual {
+        private events: IVisualEventService;
         private static legendPropertyIdentifier: DataViewObjectPropertyIdentifier = {
             objectName: 'legend',
             propertyName: 'fill'
         };
-        // tslint:disable-next-line:no-any
         private rootElement: any;
         private svg: d3.Selection<SVGElement>;
         private div: d3.Selection<SVGElement>;
-        //public range: IRange;
         private host: IVisualHost;
-        //private viewModel: ICylindricalGaugeViewModel;
         private tooltipServiceWrapper: ITooltipServiceWrapper;
         public toolTipData: ITooltipDataItem[];
         private topCircle: d3.Selection<SVGElement>;
@@ -131,7 +166,7 @@ module powerbi.extensibility.visual {
 
         //Convert the dataview into its view model
         //All the variable will be populated with the value we have passed
-        public static converter1(dataView: DataView): IProgressIndicatorValues {
+        public static CONVERTER(dataView: DataView): IProgressIndicatorValues {
             const categoriesLength: number = dataView.categorical.values.length;
             const dataValues: number[] = [0, 0, 0, 0];
             let iCount: number;
@@ -139,12 +174,11 @@ module powerbi.extensibility.visual {
                 const index: number = dataView.categorical.values[iCount].source.index;
                 dataValues[index] = <number>dataView.categorical.values[iCount].values[0];
             }
-            const data: IProgressIndicatorValues = CylindricalGauge.getDefaultData();
+            const data: IProgressIndicatorValues = CylindricalGauge.GETDEFAULTDATA();
             if (dataView && dataView.categorical) {
                 let index: number;
                 for (iCount = 0; iCount < categoriesLength; iCount++) {
                     index = dataView.categorical.values[iCount].source.index;
-                    // tslint:disable-next-line:no-any
                     const dataViewSourceRole: any = dataView.categorical.values[iCount].source.roles;
                     if (dataViewSourceRole.hasOwnProperty('Values')) {
                         data.value = <number>dataValues[index];
@@ -164,7 +198,7 @@ module powerbi.extensibility.visual {
 
             return data; //Data object we are returning here to the update function
         }
-        public static getDefaultData(): IProgressIndicatorValues {
+        public static GETDEFAULTDATA(): IProgressIndicatorValues {
             return {
                 value: null,
                 targetValue: null,
@@ -174,7 +208,7 @@ module powerbi.extensibility.visual {
             };
         }
 
-        public static converter(dataView: DataView, colors: IColorPalette): IViewModel {
+        public static CONVERTER1(dataView: DataView, colors: IColorPalette): IViewModel {
 
             if (!dataView.categorical || !dataView.categorical.values) {
                 return;
@@ -185,6 +219,104 @@ module powerbi.extensibility.visual {
                     value: <number>series[0].values[series[0].values.length - 1]
                 };
             }
+        }
+        public renderAnimation(objects: DataViewObjects, animationTime: number, labelDecimalPlaces: number, tickDecimalPlaces: number, minValue: number, maxValue: number, tarValue: number, greater: number, less: number) {
+            this.settings = {
+                rectFill1: getValue<Fill>(objects, 'config', 'rectFill1', {
+                    solid: {
+                        color: '#203DBD'
+                    }
+                }).solid.color,
+                rectFill2: getValue<Fill>(objects, 'config', 'rectFill2', {
+                    solid: {
+                        color: '#00C6FB'
+                    }
+                }).solid.color,
+                circleFill1: getValue<Fill>(objects, 'config', 'circleFill1', {
+                    solid: {
+                        color: '#0857B5'
+                    }
+                }).solid.color,
+                circleFill2: getValue<Fill>(objects, 'config', 'circleFill2', {
+                    solid: {
+                        color: '#6AE3FF'
+                    }
+                }).solid.color,
+                animationTime: animationTime,
+                borderColor: getValue<Fill>(objects, 'config', 'border', {
+                    solid: {
+                        color: '#F1F1F1'
+                    }
+                }).solid.color,
+                tarValue: tarValue,
+                targetColor: getValue<Fill>(objects, 'config', 'targetColor', {
+                    solid: {
+                        color: 'red'
+                    }
+                }).solid.color,
+                maxValue: maxValue,
+                minValue: minValue,
+                Greater: greater,
+                GreaterColor: getValue<Fill>(objects, 'config', 'GreaterColor', {
+                    solid: {
+                        color: 'red'
+                    }
+                }).solid.color,
+                Less: less,
+                LessColor: getValue<Fill>(objects, 'config', 'LessColor', {
+                    solid: {
+                        color: 'red'
+                    }
+                }).solid.color,
+                targetRange: getValue<boolean>(objects, 'config', 'targetRange', true),
+                tickBar: getValue<boolean>(objects, 'config', 'tickBar', true),
+                tickColor: getValue<Fill>(objects, 'config', 'tickColor', {
+                    solid: {
+                        color: '#000'
+                    }
+                }).solid.color,
+                scalePosition: getValue<string>(objects, 'config', 'scalePos', 'right'),
+                tickFontFamily: getValue<string>(objects, 'config', 'tickFontFamily', 'Segoe UI'),
+                tickFontSize: getValue<number>(objects, 'config', 'fontSize', 14),
+                tickDisplayUnits: getValue<number>(objects, 'config', 'displayUnits', 0),
+                tickDecimalPlaces: tickDecimalPlaces,
+                labelPos: getValue<string>(objects, 'labels', 'labelPosition', 'out'),
+                labelFontSize: getValue<number>(objects, 'labels', 'fontSize', 25),
+                dataColor: getValue<Fill>(objects, 'labels', 'dataColor', {
+                    solid: {
+                        color: '#000'
+                    }
+                }).solid.color,
+                labelDisplayUnits: getValue<number>(objects, 'labels', 'displayUnits', 0),
+                labelDecimalPlaces: labelDecimalPlaces,
+                labelFontFamily: getValue<string>(objects, 'labels', 'fontFamily', 'Segoe UI'),
+                showLabels: getValue<boolean>(objects, 'labels', 'show', true),
+                showZones: getValue<boolean>(objects, 'colorSelector', 'show', false),
+                range1: getValue<number>(objects, 'colorSelector', 'range1', null),
+                Zone1: getValue<Fill>(objects, `colorSelector`, `Zone1`, {
+                    solid: {
+                        color: '#DBEC9E'
+                    }
+                }).solid.color,
+                range2: getValue<number>(objects, 'colorSelector', 'range2', null),
+                Zone2: getValue<Fill>(objects, `colorSelector`, `Zone2`, {
+                    solid: {
+                        color: '#F9811D'
+                    }
+                }).solid.color,
+                range3: getValue<number>(objects, 'colorSelector', 'range3', null),
+                Zone3: getValue<Fill>(objects, `colorSelector`, `Zone3`, {
+                    solid: {
+                        color: '#FBA91C'
+                    }
+                }).solid.color,
+                range4: getValue<number>(objects, 'colorSelector', 'range4', null),
+                Zone4: getValue<Fill>(objects, `colorSelector`, `Zone4`, {
+                    solid: {
+                        color: '#BE99BE'
+                    }
+                }).solid.color
+            };
         }
         public getSettings(objects: DataViewObjects): void {
             if (typeof this.settings === `undefined` || (JSON.stringify(objects) !== JSON.stringify(this.prevDataViewObjects))) {
@@ -211,107 +343,14 @@ module powerbi.extensibility.visual {
                 } else if (tickDecimalPlaces < 0) {
                     tickDecimalPlaces = 0;
                 }
-                this.settings = {
-                    rectFill1: getValue<Fill>(objects, 'config', 'rectFill1', {
-                        solid: {
-                            color: '#203DBD'
-                        }
-                    }).solid.color,
-                    rectFill2: getValue<Fill>(objects, 'config', 'rectFill2', {
-                        solid: {
-                            color: '#00C6FB'
-                        }
-                    }).solid.color,
-                    circleFill1: getValue<Fill>(objects, 'config', 'circleFill1', {
-                        solid: {
-                            color: '#0857B5'
-                        }
-                    }).solid.color,
-                    circleFill2: getValue<Fill>(objects, 'config', 'circleFill2', {
-                        solid: {
-                            color: '#6AE3FF'
-                        }
-                    }).solid.color,
-                    animationTime: animationTime,
-                    borderColor: getValue<Fill>(objects, 'config', 'border', {
-                        solid: {
-                            color: '#F1F1F1'
-                        }
-                    }).solid.color,
-                    tarValue: tarValue,
-                    targetColor: getValue<Fill>(objects, 'config', 'targetColor', {
-                        solid: {
-                            color: 'red'
-                        }
-                    }).solid.color,
-                    maxValue: maxValue,
-                    minValue: minValue,
-                    Greater: greater,
-                    GreaterColor: getValue<Fill>(objects, 'config', 'GreaterColor', {
-                        solid: {
-                            color: 'red'
-                        }
-                    }).solid.color,
-                    Less: less,
-                    LessColor: getValue<Fill>(objects, 'config', 'LessColor', {
-                        solid: {
-                            color: 'red'
-                        }
-                    }).solid.color,
-                    targetRange: getValue<boolean>(objects, 'config', 'targetRange', true),
-                    tickBar: getValue<boolean>(objects, 'config', 'tickBar', true),
-                    tickColor: getValue<Fill>(objects, 'config', 'tickColor', {
-                        solid: {
-                            color: '#000'
-                        }
-                    }).solid.color,
-                    scalePosition: getValue<string>(objects, 'config', 'scalePos', 'right'),
-                    tickFontFamily: getValue<string>(objects, 'config', 'tickFontFamily', 'Segoe UI'),
-                    tickFontSize: getValue<number>(objects, 'config', 'fontSize', 14),
-                    tickDisplayUnits: getValue<number>(objects, 'config', 'displayUnits', 0),
-                    tickDecimalPlaces: tickDecimalPlaces,
-                    labelPos: getValue<string>(objects, 'labels', 'labelPosition', 'out'),
-                    labelFontSize: getValue<number>(objects, 'labels', 'fontSize', 25),
-                    dataColor: getValue<Fill>(objects, 'labels', 'dataColor', {
-                        solid: {
-                            color: '#000'
-                        }
-                    }).solid.color,
-                    labelDisplayUnits: getValue<number>(objects, 'labels', 'displayUnits', 0),
-                    labelDecimalPlaces: labelDecimalPlaces,
-                    labelFontFamily: getValue<string>(objects, 'labels', 'fontFamily', 'Segoe UI'),
-                    showLabels: getValue<boolean>(objects, 'labels', 'show', true),
-                    showZones: getValue<boolean>(objects, 'colorSelector', 'show', false),
-                    range1: getValue<number>(objects, 'colorSelector', 'range1', null),
-                    Zone1: getValue<Fill>(objects, `colorSelector`, `Zone1`, {
-                        solid: {
-                            color: '#DBEC9E'
-                        }
-                    }).solid.color,
-                    range2: getValue<number>(objects, 'colorSelector', 'range2', null),
-                    Zone2: getValue<Fill>(objects, `colorSelector`, `Zone2`, {
-                        solid: {
-                            color: '#F9811D'
-                        }
-                    }).solid.color,
-                    range3: getValue<number>(objects, 'colorSelector', 'range3', null),
-                    Zone3: getValue<Fill>(objects, `colorSelector`, `Zone3`, {
-                        solid: {
-                            color: '#FBA91C'
-                        }
-                    }).solid.color,
-                    range4: getValue<number>(objects, 'colorSelector', 'range4', null),
-                    Zone4: getValue<Fill>(objects, `colorSelector`, `Zone4`, {
-                        solid: {
-                            color: '#BE99BE'
-                        }
-                    }).solid.color
-                };
+                this.renderAnimation(objects, animationTime, labelDecimalPlaces, tickDecimalPlaces, minValue, maxValue, tarValue, greater, less)
+
             }
         }
 
-        /** This is called once when the visual is initialially created */
+        // This is called once when the visual is initialially created //
         constructor(options: VisualConstructorOptions) {
+            this.events = options.host.eventService;
             this.host = options.host;
             this.div = d3.select(options.element).append('div').classed('cylindricalGaugeBody', true);
             this.tooltipServiceWrapper = createTooltipServiceWrapper(this.host.tooltipService, options.element);
@@ -320,102 +359,14 @@ module powerbi.extensibility.visual {
             options.element.setAttribute('id', 'container');
         }
 
-        /** Update is called for data updates, resizes & formatting changes */
+        // Update is called for data updates, resizes & formatting changes //
         // tslint:disable-next-line:cyclomatic-complexity
-        public update(options: VisualUpdateOptions): void {
-            this.margins = {
-                bottom: 30,
-                small: 20,
-                big: 0
-            };
-            this.svg.selectAll('.cylinder').remove();
-            this.svg.selectAll('.yLabels').remove();
-            this.svg.selectAll('line').remove();
-            this.rootElement.selectAll('.ErrorMessage').remove();
-
-            if (options.viewport.width <= 50) {
-                return;
-            }
-            const mainGroup: d3.Selection<SVGElement> = this.svg.append('g').classed('cylinder', true);
-            this.gradient = mainGroup.append('svg:linearGradient');
-            this.gradient1 = mainGroup.append('svg:linearGradient');
-            this.gradient2 = mainGroup.append('svg:linearGradient');
-            this.gradient3 = mainGroup.append('svg:linearGradient');
-            this.gradient4 = mainGroup.append('svg:linearGradient');
-            this.backRect = mainGroup.append('rect');
-            this.backCircle = mainGroup.append('ellipse');
-            this.zones = mainGroup.append('g').classed('zones', true);
-            this.zone1 = mainGroup.append('ellipse').classed('zone1', true);
-            this.zone2 = mainGroup.append('ellipse').classed('zone2', true);
-            this.zone3 = mainGroup.append('ellipse').classed('zone3', true);
-            this.zone4 = mainGroup.append('ellipse').classed('zone4', true);
-            this.topCircle = mainGroup.append('ellipse');
-            this.fillRect1 = mainGroup.append('rect').classed('front_rect1', true);
-            this.fillRect2 = mainGroup.append('rect').classed('front_rect2', true);
-            this.fillCircle = mainGroup.append('ellipse').classed('top', true);
-            this.highlightCircle = mainGroup.append('ellipse').classed('highlightCircle', true);
-            this.tempMarkings = this.svg.append('g').attr('class', 'yLabels axis');
-            this.axisMarking = this.svg.append('line').classed('highlight_line', true);
-            this.bottomCircle = mainGroup.append('ellipse').classed('bottom', true);
-            this.targetCircle = mainGroup.append('ellipse').classed('Target', true);
-            //target range circles
-            this.greaterCircle = mainGroup.append('ellipse').classed('targetcircle_greater', true);
-            this.lessCircle = mainGroup.append('ellipse').classed('targetcircle_less', true);
-            this.zoneLines = mainGroup.append('g').classed('zoneLines', true);
-            this.text = mainGroup.append('text');
-            this.viewport = options.viewport;
-            this.isActual = false;
-            this.isMin = false;
-            this.isMax = false;
-            this.isTarget = false;
-            // tslint:disable-next-line:no-any
-            const dataViewOptions: any = options.dataViews[0];
-            if (!options.dataViews || 0 === options.dataViews.length) {
-                return;
-            }
-            // tslint:disable-next-line:no-any
-            const dataViewOptionsCatValues: any = dataViewOptions.categorical.values;
-            this.highlight = dataViewOptionsCatValues[0].highlights ? true : false;
-            if (this.highlight) {
-                this.highlightValue = dataViewOptionsCatValues[0].highlights[0] === null ? 0
-                    : <number>dataViewOptionsCatValues[0].highlights[0];
-                if (this.isTarget) {
-                    this.highlightTarget = <number>dataViewOptionsCatValues[1].highlights[0];
-                }
-            }
-            for (let iCatValue: number = 0; iCatValue < dataViewOptionsCatValues.length; iCatValue++) {
-                // tslint:disable-next-line:no-any
-                const dataViewRole: any = dataViewOptionsCatValues[iCatValue].source.roles;
-                if (dataViewRole.hasOwnProperty('Values')) {
-                    this.isActual = true;
-                }
-                if (dataViewRole.hasOwnProperty('TargetValue')) {
-                    this.isTarget = true;
-                }
-                if (dataViewRole.hasOwnProperty('Min')) {
-                    this.isMin = true;
-                }
-                if (dataViewRole.hasOwnProperty('Max')) {
-                    this.isMax = true;
-                }
-            }
-
-            if (!this.isActual) {
-                const message: string = 'Please add "Actual Value" field';
-                this.rootElement
-                    .append('div')
-                    .classed('ErrorMessage', true)
-                    .text(message)
-                    .attr('title', message);
-
-                return;
-            }
-
+        private updateSetting(options: VisualUpdateOptions) {
             const dataView: DataView = this.dataView = options.dataViews[0];
             this.data = null;
             this.data1 = null;
-            this.data = CylindricalGauge.converter1(dataView);
-            this.data1 = CylindricalGauge.converter(options.dataViews[0], null);
+            this.data = CylindricalGauge.CONVERTER(dataView);
+            this.data1 = CylindricalGauge.CONVERTER1(options.dataViews[0], null);
             if (!this.data) {
                 return;
             }
@@ -494,9 +445,9 @@ module powerbi.extensibility.visual {
                     : this.settings.range4 < range123Max ?
                         range123Max : this.settings.range4 > this.data1.max ? null : this.settings.range4;
             }
+        }
 
-            this.getFormatter(options);
-
+        private updateHighlight(options: VisualUpdateOptions) {
             const viewport: IViewport = options.viewport;
             const height: number = viewport.height;
             const width: number = viewport.width;
@@ -532,9 +483,103 @@ module powerbi.extensibility.visual {
             } else {
                 this.draw(width, visualheight - labelHeight + 15, check);
             }
-
-            this.renderTooltip();
         }
+        public update(options: VisualUpdateOptions): void {
+            this.events.renderingStarted(options);
+
+            this.margins = {
+                bottom: 30,
+                small: 20,
+                big: 0
+            };
+            this.svg.selectAll('.cylinder').remove();
+            this.svg.selectAll('.yLabels').remove();
+            this.svg.selectAll('line').remove();
+            this.rootElement.selectAll('.ErrorMessage').remove();
+
+            if (options.viewport.width <= 50) {
+                return;
+            }
+            const mainGroup: d3.Selection<SVGElement> = this.svg.append('g').classed('cylinder', true);
+            this.gradient = mainGroup.append('svg:linearGradient');
+            this.gradient1 = mainGroup.append('svg:linearGradient');
+            this.gradient2 = mainGroup.append('svg:linearGradient');
+            this.gradient3 = mainGroup.append('svg:linearGradient');
+            this.gradient4 = mainGroup.append('svg:linearGradient');
+            this.backRect = mainGroup.append('rect');
+            this.backCircle = mainGroup.append('ellipse');
+            this.zones = mainGroup.append('g').classed('zones', true);
+            this.zone1 = mainGroup.append('ellipse').classed('zone1', true);
+            this.zone2 = mainGroup.append('ellipse').classed('zone2', true);
+            this.zone3 = mainGroup.append('ellipse').classed('zone3', true);
+            this.zone4 = mainGroup.append('ellipse').classed('zone4', true);
+            this.topCircle = mainGroup.append('ellipse');
+            this.fillRect1 = mainGroup.append('rect').classed('front_rect1', true);
+            this.fillRect2 = mainGroup.append('rect').classed('front_rect2', true);
+            this.fillCircle = mainGroup.append('ellipse').classed('top', true);
+            this.highlightCircle = mainGroup.append('ellipse').classed('highlightCircle', true);
+            this.tempMarkings = this.svg.append('g').attr('class', 'yLabels axis');
+            this.axisMarking = this.svg.append('line').classed('highlight_line', true);
+            this.bottomCircle = mainGroup.append('ellipse').classed('bottom', true);
+            this.targetCircle = mainGroup.append('ellipse').classed('Target', true);
+            //target range circles
+            this.greaterCircle = mainGroup.append('ellipse').classed('targetcircle_greater', true);
+            this.lessCircle = mainGroup.append('ellipse').classed('targetcircle_less', true);
+            this.zoneLines = mainGroup.append('g').classed('zoneLines', true);
+            this.text = mainGroup.append('text');
+            this.viewport = options.viewport;
+            this.isActual = false;
+            this.isMin = false;
+            this.isMax = false;
+            this.isTarget = false;
+            const dataViewOptions: any = options.dataViews[0];
+            if (!options.dataViews || 0 === options.dataViews.length) {
+                return;
+            }
+            const dataViewOptionsCatValues: any = dataViewOptions.categorical.values;
+            this.highlight = dataViewOptionsCatValues[0].highlights ? true : false;
+            if (this.highlight) {
+                this.highlightValue = dataViewOptionsCatValues[0].highlights[0] === null ? 0
+                    : <number>dataViewOptionsCatValues[0].highlights[0];
+                if (this.isTarget) {
+                    this.highlightTarget = <number>dataViewOptionsCatValues[1].highlights[0];
+                }
+            }
+            for (let iCatValue: number = 0; iCatValue < dataViewOptionsCatValues.length; iCatValue++) {
+
+                const dataViewRole: any = dataViewOptionsCatValues[iCatValue].source.roles;
+                if (dataViewRole.hasOwnProperty('Values')) {
+                    this.isActual = true;
+                }
+                if (dataViewRole.hasOwnProperty('TargetValue')) {
+                    this.isTarget = true;
+                }
+                if (dataViewRole.hasOwnProperty('Min')) {
+                    this.isMin = true;
+                }
+                if (dataViewRole.hasOwnProperty('Max')) {
+                    this.isMax = true;
+                }
+            }
+
+            if (!this.isActual) {
+                const message: string = 'Please add "Actual Value" field';
+                this.rootElement
+                    .append('div')
+                    .classed('ErrorMessage', true)
+                    .text(message)
+                    .attr('title', message);
+
+                return;
+            }
+
+            this.updateSetting(options);
+            this.getFormatter(options);
+            this.updateHighlight(options);
+            this.renderTooltip();
+            this.events.renderingFinished(options);
+        }
+
         private getFormattedData(value: number, displayUnits: number, precision: number, format: string): string {
             let formattedData: string;
             let formatterVal: number = displayUnits;
@@ -553,11 +598,11 @@ module powerbi.extensibility.visual {
                 }
             }
             if (!format) {
-                format = ValueFormatter.DefaultNumericFormat;
+                format = valueFormatter.DefaultNumericFormat;
             }
             precision = precision === null ? 0 : precision;
             let formatter: IValueFormatter;
-            formatter = ValueFormatter.create({
+            formatter = valueFormatter.create({
                 value: formatterVal,
                 precision: precision,
                 format: format
@@ -595,8 +640,8 @@ module powerbi.extensibility.visual {
 
             //const tooltipbg = this.svg.selectAll('.cylinder').data(toolTipInfo);
             this.tooltipServiceWrapper.addTooltip(d3.selectAll('.cylinder'),
-                                                  (tooltipEvent: TooltipEventArgs<number>) => this.toolTipInfo,
-                                                  (tooltipEvent: TooltipEventArgs<number>) => null);
+                (tooltipEvent: TooltipEventArgs<number>) => this.toolTipInfo,
+                (tooltipEvent: TooltipEventArgs<number>) => null);
 
         }
 
@@ -616,12 +661,12 @@ module powerbi.extensibility.visual {
                 options.dataViews[0].categorical.values[0].source.format.indexOf('%') !== -1) {
                 displayVal = 0;
             }
-            this.labelValueFormatter = ValueFormatter.create({
+            this.labelValueFormatter = valueFormatter.create({
                 format: options.dataViews[0].categorical.values[0].source.format,
                 value: this.settings.labelDisplayUnits === 0 ? displayVal : this.settings.labelDisplayUnits,
                 precision: this.settings.labelDecimalPlaces
             });
-            this.tickValueFormatter = ValueFormatter.create({
+            this.tickValueFormatter = valueFormatter.create({
                 format: options.dataViews[0].categorical.values[0].source.format,
                 value: this.settings.tickDisplayUnits === 0 ? displayVal : this.settings.tickDisplayUnits,
                 precision: this.settings.tickDecimalPlaces
@@ -694,57 +739,7 @@ module powerbi.extensibility.visual {
                     fill: fill
                 });
         }
-
-        // tslint:disable-next-line:cyclomatic-complexity
-        public drawFill(width: number, height: number, radius: number, check: boolean): void {
-            const rectFill1: string = this.settings.rectFill1;
-            const rectFill2: string = this.settings.rectFill2;
-            const circleFill1: string = this.settings.circleFill1;
-            const circleFill2: string = this.settings.circleFill2;
-            const animationTime: number = this.settings.animationTime * 1000 < 0 ? 6000 : this.settings.animationTime * 1000;
-            const targetFill: string = this.settings.targetColor;
-            const greaterFill: string = this.settings.GreaterColor;
-            const lessFill: string = this.settings.LessColor;
-            const min: number = this.data1.min;
-            const max: number = this.data1.max;
-            const value: number = this.data1.value;
-            const rectHeight: number = height - radius / 2;
-            // 30 since we are providing value of cy for top circle as 30.
-            const minMaxDiff: number = max - min === 0 ? 1 : max - min;
-            const percentage: number = (rectHeight - this.margins.bottom) * ((value - min) / minMaxDiff);
-
-            const yPos: number = rectHeight - percentage;
-            // tslint:disable-next-line:no-any
-            const yscale: any = d3.scale.linear()
-                .domain([this.data1.min, this.data1.max])
-                .range([rectHeight, this.margins.bottom]);
-
-            this.gradient.attr('id', 'gradient')
-                .attr('x1', '100%')
-                .attr('y1', '0%')
-                .attr('x2', '100%')
-                .attr('y2', '100%')
-                .attr('spreadMethod', 'pad');
-            this.gradient.append('stop').attr('offset', '0%').attr('stop-color', this.settings.rectFill2).attr('stop-opacity', 1);
-            this.gradient.append('stop').attr('offset', '100%').attr('stop-color', this.settings.rectFill1).attr('stop-opacity', 1);
-
-            this.fillRect2
-                .attr('y', yscale(this.data1.min))
-                .attr('height', 0)
-                .attr('width', width / 2)
-                .style('fill', 'url(#gradient)')
-                .attr({
-                    x: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ? this.margins.big + this.margins.small * 1.5
-                        : this.margins.small / 2 : this.margins.small,
-                    width: this.data1.drawTickBar ? width - 2 * this.margins.small - this.margins.big : width - 2 * this.margins.small
-                })
-                .transition()
-                .duration(animationTime)
-                .attr('height', percentage - 5 < 0 ? 0 : percentage - 5)
-                .attr('y', yscale(this.data1.value) + 5)
-                .style('fill', 'url(#gradient)');
-
-            //animation for cylinder
+        public animation(yscale: any, width: number, animationTime: number, circleFill2: string) {
             if (this.highlight) {
                 this.fillRect1
                     .attr('y', yscale(this.data1.min))
@@ -784,14 +779,15 @@ module powerbi.extensibility.visual {
                 this.fillRect2
                     .style('fill-opacity', 0.9);
             }
+        }
 
+        public showsettings(yscale: any, width: number) {
             if (this.settings.showZones) {
                 const zoneValues: number[] = [];
                 zoneValues.push(this.settings.range4);
                 zoneValues.push(this.settings.range3);
                 zoneValues.push(this.settings.range2);
                 zoneValues.push(this.settings.range1);
-
                 const colors: string[] = [];
                 this.gradient1.attr('id', 'gradient1');
                 this.gradient1.append('stop').attr('offset', '0%').attr('stop-color', this.settings.Zone4).attr('stop-opacity', 1);
@@ -809,10 +805,8 @@ module powerbi.extensibility.visual {
                 this.gradient4.append('stop').attr('offset', '0%').attr('stop-color', this.settings.Zone1).attr('stop-opacity', 1);
                 this.gradient4.append('stop').attr('offset', '100%').attr('stop-color', '#F1F1F1').attr('stop-opacity', 1);
                 colors.push('url(#gradient4)');
-
                 const zonesRect: d3.selection.Update<number> = this.zones.selectAll('zones_rect').data(zoneValues);
                 zonesRect.enter().append('rect').classed('zones_rect', true);
-
                 zonesRect.attr('height', 0)
                     .attr({
                         x: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ? this.margins.big + this.margins.small * 1.5
@@ -855,7 +849,6 @@ module powerbi.extensibility.visual {
                             ? 'none' : colors[1]
                     });
                 }
-
                 if (this.settings.range4) {
                     this.zone3.attr({
                         cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
@@ -884,57 +877,9 @@ module powerbi.extensibility.visual {
                         ? 'none' : this.settings.borderColor
                 });
             }
+        }
 
-            this.fillCircle.attr({
-                cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
-                    width / 2 + this.margins.big / 2 + this.margins.small / 2
-                    : width / 2 - this.margins.big / 2 - this.margins.small / 2 : width / 2,
-                cy: yscale(this.data1.min),
-                rx: this.data1.drawTickBar ? width / 2 - this.margins.small - this.margins.big / 2 : width / 2 - this.margins.small,
-                ry: 20
-            }).style({
-                fill: circleFill1
-            });
-
-            //All Target circles
-            if ((check)) {
-                this.targetCircle.attr({
-                    cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
-                        width / 2 + this.margins.big / 2 + this.margins.small / 2
-                        : width / 2 - this.margins.big / 2 - this.margins.small / 2 : width / 2,
-                    cy: yscale(this.highlight ? this.highlightTarget : this.data1.targetValue) + 5,
-                    rx: this.data1.drawTickBar ? width / 2 - this.margins.small - this.margins.big / 2 : width / 2 - this.margins.small,
-                    ry: 20
-                }).style({
-                    fill: 'transparent',
-                    'stroke-width':
-                        this.highlight ? this.highlightTarget >= this.data1.min && this.highlightTarget <= this.data1.max ? 1 : 0 : 1,
-                    stroke: targetFill
-                });
-            } else {
-                this.targetCircle.style('stroke', 'transparent');
-            }
-
-            //target range circle which is less than targetcircle
-            if (this.data1.targetRange === true && this.data1.Less) {
-                this.lessCircle.attr({
-                    cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
-                        width / 2 + this.margins.big / 2 + this.margins.small / 2
-                        : width / 2 - this.margins.big / 2 - this.margins.small / 2 : width / 2,
-                    cy: yscale(this.data1.Less) + 5,
-                    rx: this.data1.drawTickBar ? width / 2 - this.margins.small - this.margins.big / 2 : width / 2 - this.margins.small,
-                    ry: 20
-                }).style({
-                    fill: 'transparent',
-                    'stroke-width': 1,
-                    stroke: lessFill,
-                    'stroke-dasharray': '0 4',
-                    'stroke-linecap': 'round'
-                });
-            } else {
-                this.lessCircle.style('stroke', 'transparent');
-            }
-
+        public rangecircle(width: number, yscale: any, greaterFill: string, circleFill2: string, rectHeight: number, animationTime: number, percentage: number) {
             //target range circle which is greater than targetcircle
 
             if (this.data1.targetRange === true && this.data1.Greater) {
@@ -991,16 +936,116 @@ module powerbi.extensibility.visual {
                         : this.margins.small / 2 + 5 : this.margins.small + 5,
                     width
                         : this.data1.drawTickBar ? width - 2 * this.margins.small
-                        - this.margins.big - 10 : width - 2 * this.margins.small - 10
+                            - this.margins.big - 10 : width - 2 * this.margins.small - 10
                 });
                 this.fillRect2.attr({
                     x: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ? this.margins.big + this.margins.small * 1.5 + 5
                         : this.margins.small / 2 + 5 : this.margins.small + 5,
                     width
                         : this.data1.drawTickBar ? width - 2 * this.margins.small
-                         - this.margins.big - 10 : width - 2 * this.margins.small - 10
+                            - this.margins.big - 10 : width - 2 * this.margins.small - 10
                 });
             }
+        }
+        // tslint:disable-next-line:cyclomatic-complexity
+        public drawFill(width: number, height: number, radius: number, check: boolean): void {
+            const rectFill1: string = this.settings.rectFill1;
+            const rectFill2: string = this.settings.rectFill2;
+            const circleFill1: string = this.settings.circleFill1;
+            const circleFill2: string = this.settings.circleFill2;
+            const animationTime: number = this.settings.animationTime * 1000 < 0 ? 6000 : this.settings.animationTime * 1000;
+            const targetFill: string = this.settings.targetColor;
+            const greaterFill: string = this.settings.GreaterColor;
+            const lessFill: string = this.settings.LessColor;
+            const min: number = this.data1.min;
+            const max: number = this.data1.max;
+            const value: number = this.data1.value;
+            const rectHeight: number = height - radius / 2;
+            // 30 since we are providing value of cy for top circle as 30.
+            const minMaxDiff: number = max - min === 0 ? 1 : max - min;
+            const percentage: number = (rectHeight - this.margins.bottom) * ((value - min) / minMaxDiff);
+            const yPos: number = rectHeight - percentage;
+            const yscale: any = d3.scale.linear()
+                .domain([this.data1.min, this.data1.max])
+                .range([rectHeight, this.margins.bottom]);
+            this.gradient.attr('id', 'gradient')
+                .attr('x1', '100%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '100%')
+                .attr('spreadMethod', 'pad');
+            this.gradient.append('stop').attr('offset', '0%').attr('stop-color', this.settings.rectFill2).attr('stop-opacity', 1);
+            this.gradient.append('stop').attr('offset', '100%').attr('stop-color', this.settings.rectFill1).attr('stop-opacity', 1);
+            this.fillRect2
+                .attr('y', yscale(this.data1.min))
+                .attr('height', 0)
+                .attr('width', width / 2)
+                .style('fill', 'url(#gradient)')
+                .attr({
+                    x: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ? this.margins.big + this.margins.small * 1.5
+                        : this.margins.small / 2 : this.margins.small,
+                    width: this.data1.drawTickBar ? width - 2 * this.margins.small - this.margins.big : width - 2 * this.margins.small
+                })
+                .transition()
+                .duration(animationTime)
+                .attr('height', percentage - 5 < 0 ? 0 : percentage - 5)
+                .attr('y', yscale(this.data1.value) + 5)
+                .style('fill', 'url(#gradient)');
+
+            //animation for cylinder
+            this.animation(yscale, width, animationTime, circleFill2);
+            this.showsettings(yscale, width);
+
+            this.fillCircle.attr({
+                cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
+                    width / 2 + this.margins.big / 2 + this.margins.small / 2
+                    : width / 2 - this.margins.big / 2 - this.margins.small / 2 : width / 2,
+                cy: yscale(this.data1.min),
+                rx: this.data1.drawTickBar ? width / 2 - this.margins.small - this.margins.big / 2 : width / 2 - this.margins.small,
+                ry: 20
+            }).style({
+                fill: circleFill1
+            });
+
+            //All Target circles
+            if ((check)) {
+                this.targetCircle.attr({
+                    cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
+                        width / 2 + this.margins.big / 2 + this.margins.small / 2
+                        : width / 2 - this.margins.big / 2 - this.margins.small / 2 : width / 2,
+                    cy: yscale(this.highlight ? this.highlightTarget : this.data1.targetValue) + 5,
+                    rx: this.data1.drawTickBar ? width / 2 - this.margins.small - this.margins.big / 2 : width / 2 - this.margins.small,
+                    ry: 20
+                }).style({
+                    fill: 'transparent',
+                    'stroke-width':
+                        this.highlight ? this.highlightTarget >= this.data1.min && this.highlightTarget <= this.data1.max ? 1 : 0 : 1,
+                    stroke: targetFill
+                });
+            } else {
+                this.targetCircle.style('stroke', 'transparent');
+            }
+
+            //target range circle which is less than targetcircle
+            if (this.data1.targetRange === true && this.data1.Less) {
+                this.lessCircle.attr({
+                    cx: this.data1.drawTickBar ? this.settings.scalePosition === 'left' ?
+                        width / 2 + this.margins.big / 2 + this.margins.small / 2
+                        : width / 2 - this.margins.big / 2 - this.margins.small / 2 : width / 2,
+                    cy: yscale(this.data1.Less) + 5,
+                    rx: this.data1.drawTickBar ? width / 2 - this.margins.small - this.margins.big / 2 : width / 2 - this.margins.small,
+                    ry: 20
+                }).style({
+                    fill: 'transparent',
+                    'stroke-width': 1,
+                    stroke: lessFill,
+                    'stroke-dasharray': '0 4',
+                    'stroke-linecap': 'round'
+                });
+            } else {
+                this.lessCircle.style('stroke', 'transparent');
+            }
+            this.rangecircle(width, yscale, greaterFill, circleFill2, rectHeight, animationTime, percentage);
         }
 
         private shadeColor(col: string, amt: number): string {
@@ -1044,22 +1089,15 @@ module powerbi.extensibility.visual {
             const percentage: number = (rectHeight - this.margins.bottom) * ((value - min) / minMaxDiff);
             const yPos: number = rectHeight - percentage;
             d3.select('.yLabels.axis').attr('visibility', 'visible');
-            // tslint:disable-next-line:no-any
-            let y: any; let yAxis: any;
-            const tickData: number[] = [];
-            let icount: number;
-            y = d3.scale.linear()
+            let y: any; let yAxis: any; const tickData: number[] = [];
+            let icount: number; y = d3.scale.linear()
                 .range([rectHeight, this.margins.bottom])
-                .domain([this.data1.min, this.data1.max]);
-            const interval: number = (this.data1.max - this.data1.min) / 4;
-
-            tickData[0] = this.data1.min;
+                .domain([this.data1.min, this.data1.max]); const interval: number = (this.data1.max - this.data1.min) / 4; tickData[0] = this.data1.min;
             for (icount = 1; icount < 5; icount++) {
                 tickData[icount] = tickData[icount - 1] + interval;
             }
 
-            let maxTickwidth: number = 0;
-            let tickwidth: number = 0;
+            let maxTickwidth: number = 0; let tickwidth: number = 0;
             // for calculating the position of the axis
             for (icount = 0; icount < 5; icount++) {
                 const measureTextProperties: TextProperties = {
@@ -1116,20 +1154,18 @@ module powerbi.extensibility.visual {
                     });
             }
             //tooltip information adding
-            const tooptipFormatter: utils.formatting.IValueFormatter = ValueFormatter.create({
+            const tooptipFormatter: utils.formatting.IValueFormatter = valueFormatter.create({
                 format: this.dataView.categorical.values[0].source.format
             });
             d3.selectAll('.yLabels.axis>.tick title').remove();
             d3.selectAll('.yLabels.axis>.tick')
                 .append('title')
-                .text(function (d: string): string {
+                .text((d: string) => {
                     return tooptipFormatter.format(d);
                 });
 
             const ticks: JQuery = $('.yLabels.axis>.tick');
-            // tslint:disable-next-line:no-any
             const domPositonTick1: any = ticks[0].getBoundingClientRect();
-            // tslint:disable-next-line:no-any
             const domPositonTick2: any = ticks[1].getBoundingClientRect();
             const overlap: boolean = !(domPositonTick1.right < domPositonTick2.left ||
                 domPositonTick1.left > domPositonTick2.right ||
@@ -1163,7 +1199,7 @@ module powerbi.extensibility.visual {
                     'font-size': `${this.settings.labelFontSize}px`
                 });
             //tooltip information adding
-            const tooptipFormatter: utils.formatting.IValueFormatter = ValueFormatter.create({
+            const tooptipFormatter: utils.formatting.IValueFormatter = valueFormatter.create({
                 format: this.dataView.categorical.values[0].source.format
             });
             this.text.append('title')
@@ -1214,10 +1250,10 @@ module powerbi.extensibility.visual {
         public enumerateObjectInstances(options: EnumerateVisualObjectInstancesOptions): VisualObjectInstance[] {
             // const instances: VisualObjectInstance[] = [];
             const dataView: DataView = this.dataView;
-            const a: IProgressIndicatorValues = CylindricalGauge.getDefaultData();
+            const a: IProgressIndicatorValues = CylindricalGauge.GETDEFAULTDATA();
 
             if (!this.data) {
-                this.data = CylindricalGauge.getDefaultData();
+                this.data = CylindricalGauge.GETDEFAULTDATA();
             }
             let objectName: string;
             let objectEnum: VisualObjectInstance[];
