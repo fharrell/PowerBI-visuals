@@ -4,12 +4,12 @@
     "displayName": "Cylindrical Gauge by MAQ Software",
     "guid": "cylindricalGauge73A12A442345453EB69B593649C3A341",
     "visualClassName": "CylindricalGauge",
-    "version": "3.3.6",
+    "version": "3.4.0",
     "description": "Track current values against a target with an intuitive 3D cylinder visual",
     "supportUrl": "https://github.com/maqsoftware/PowerBI-visuals/issues",
     "gitHubUrl": "https://github.com/maqsoftware/PowerBI-visuals/"
   },
-  "apiVersion": "2.1.0",
+  "apiVersion": "2.5.0",
   "author": {
     "name": "MAQ Software",
     "email": "support@maqsoftware.com"
@@ -28,6 +28,7 @@
     "node_modules/powerbi-visuals-utils-dataviewutils/lib/index.js",
     "node_modules/powerbi-visuals-utils-formattingutils/lib/index.js",
     "node_modules/powerbi-visuals-utils-interactivityutils/lib/index.js",
+    "node_modules/powerbi-visuals-utils-tooltiputils/lib/index.js",
     "node_modules/powerbi-visuals-utils-chartutils/lib/index.js"
   ],
   "style": "style/visual.less",
