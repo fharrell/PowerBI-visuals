@@ -1,3 +1,30 @@
+
+/*
+ *  Power BI Visual CLI
+ *
+ *  Copyright (c) Microsoft Corporation
+ *  All rights reserved.
+ *  MIT License
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy
+ *  of this software and associated documentation files (the ''Software''), to deal
+ *  in the Software without restriction, including without limitation the rights
+ *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ *  copies of the Software, and to permit persons to whom the Software is
+ *  furnished to do so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in
+ *  all copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ *  THE SOFTWARE.
+ */
+
 module powerbi.extensibility.visual {
     let legendValues: {};
     legendValues = {};
@@ -20,22 +47,21 @@ module powerbi.extensibility.visual {
     let brickChartGradientShowProp: DataViewObjectPropertyIdentifier;
     brickChartGradientShowProp = { objectName: 'gradientValue', propertyName: 'show' };
     import valueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
-    import ValueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
     import IValueFormatter = powerbi.extensibility.utils.formatting.IValueFormatter;
     import LegendData = powerbi.extensibility.utils.chart.legend.LegendData;
     import createLegend = powerbi.extensibility.utils.chart.legend.createLegend;
-    import legendPosition = powerbi.extensibility.utils.chart.legend.position;
+    import position = powerbi.extensibility.utils.chart.legend.position;
     import legend = powerbi.extensibility.utils.chart.legend;
     import LegendPosition = powerbi.extensibility.utils.chart.legend.LegendPosition;
     import ILegend = powerbi.extensibility.utils.chart.legend.ILegend;
-    import legendIcon = powerbi.extensibility.utils.chart.legend.LegendIcon;
-    import SelectionId = powerbi.visuals.ISelectionId;
+    import LegendIcon = powerbi.extensibility.utils.chart.legend.LegendIcon;
+    import ISelectionId = powerbi.visuals.ISelectionId;
     import ITooltipServiceWrapper = powerbi.extensibility.utils.tooltip.ITooltipServiceWrapper;
     import DataViewObjects = powerbi.DataViewObjects;
     import ISelectionManager = powerbi.extensibility.ISelectionManager;
     import VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
     import tooltip = powerbi.extensibility.utils.tooltip;
-    import dataLabelUtils = powerbi.extensibility.utils.chart.dataLabel.utils;
+    import utils = powerbi.extensibility.utils.chart.dataLabel.utils;
     import IColorPalette = powerbi.extensibility.IColorPalette;
     const colonLiteral: string = ':';
     const custLegIndLiteral: string = 'cust_leg_ind';
@@ -115,7 +141,7 @@ module powerbi.extensibility.visual {
     }
 
     function getCategoricalObjectValue<T>(category: DataViewCategoryColumn, index: number,
-                                          objectName: string, propertyName: string, defaultValue: T): T {
+        objectName: string, propertyName: string, defaultValue: T): T {
         let categoryObjects: DataViewObjects[];
         categoryObjects = category.objects;
         if (categoryObjects) {
@@ -138,9 +164,9 @@ module powerbi.extensibility.visual {
     /**
      * export class BrickChart implements IVisual
      */
-    export class BrickChart implements IVisual {
+    export class visual implements IVisual {
         private tooltipServiceWrapper: ITooltipServiceWrapper;
-
+        private events: IVisualEventService;
         public host: IVisualHost;
         private svg: d3.Selection<SVGElement>;
         public data: IBrickChartData;
@@ -163,7 +189,7 @@ module powerbi.extensibility.visual {
         private legend: ILegend;
         private legendObjectProperties: DataViewObject;
         private selectionManager: ISelectionManager;
-        public static getDefaultData(): IBrickChartData {
+        public static GETDEFAULTDATA(): IBrickChartData {
             return {
                 categories: {},
                 borderColor: '#555',
@@ -187,17 +213,17 @@ module powerbi.extensibility.visual {
             };
         }
 
-        /** This is called once when the visual is initialially created */
+        // This is called once when the visual is initialially created //
         constructor(options: VisualConstructorOptions) {
             this.host = options.host;
+            this.events = options.host.eventService;
             this.selectionManager = options.host.createSelectionManager();
             this.tooltipServiceWrapper = tooltip.createTooltipServiceWrapper(this.host.tooltipService, options.element);
             this.root = d3.select(options.element);
             this.rootElement = d3.select(options.element)
                 .append('div')
                 .classed('brickchart_topContainer', true);
-            let oElement: JQuery;
-            oElement = $('div');
+            const oElement = document.getElementsByTagName('div')[0];
             this.legend = createLegend(oElement, false, null, true);
             this.initMatrix(options);
             this.toolTipInfo = [{ displayName: '', value: '' }];
@@ -217,7 +243,7 @@ module powerbi.extensibility.visual {
         }
 
         // tslint:disable-next-line:no-any
-        public static numberWithCommas(num: any): string {
+        public static NUMBERWITHCOMMAS(num: any): string {
             let numeric: number;
             numeric = parseInt(num, 10);
             let decimal: string;
@@ -290,7 +316,8 @@ module powerbi.extensibility.visual {
             let index: number;
             sum = 0, index = 1;
             let sDataSetKey: string;
-            for (sDataSetKey in dataSet) {
+
+            for (sDataSetKey of Object.keys(dataSet)) {
                 if (parseFloat(dataSet[sDataSetKey].value) > 0) {
                     sum += dataSet[sDataSetKey].value;
                 }
@@ -299,9 +326,9 @@ module powerbi.extensibility.visual {
             return sum;
         }
         //Convertor Function
-        public static converter(dataView: DataView, host: IVisualHost): IBrickChartData {
+        public static CONVERTER(dataView: DataView, host: IVisualHost): IBrickChartData {
             let data: IBrickChartData;
-            data = BrickChart.getDefaultData();
+            data = visual.GETDEFAULTDATA();
             data.dataPoints = [];
             if (dataView && dataView.categorical && dataView.categorical.categories && dataView.categorical.values) {
                 // tslint:disable-next-line:no-any
@@ -320,7 +347,7 @@ module powerbi.extensibility.visual {
                 // tslint:disable-next-line:no-any
                 const category: any = categorical.categories[0];
                 let formatter: IValueFormatter;
-                formatter = ValueFormatter.create({ format: 'dddd\, MMMM %d\, yyyy' });
+                formatter = valueFormatter.create({ format: 'dddd\, MMMM %d\, yyyy' });
                 let iCounter: number;
                 for (iCounter = 0; iCounter < legends.length; iCounter++) {
                     if (values[iCounter] <= 0) {
@@ -360,9 +387,9 @@ module powerbi.extensibility.visual {
                 }
                 data.categories = dataSet;
             }
-            data.legendData = BrickChart.getLegendData(dataView, data.dataPoints, host);
-            data.settings = BrickChart.parseLegendSettings(dataView);
-            data.gradientValue = BrickChart.getGradientValue(dataView);
+            data.legendData = visual.getLegendData(dataView, data.dataPoints, host);
+            data.settings = visual.parseLegendSettings(dataView);
+            data.gradientValue = visual.getGradientValue(dataView);
 
             return data;
         }
@@ -518,7 +545,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 2': {
                     svg.attr('cx', 20)
                         .attr('cy', 0)
@@ -527,7 +554,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 3': {
 
                     svg.attr('cx', (20 * iRow))
@@ -537,7 +564,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 4': {
                     svg.attr('cx', 20 * iRow)
                         .attr('cy', (20 * iColumn))
@@ -546,7 +573,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 5': {
                     svg.attr('cx', ((400 * (iColumn)) + (50 * iRow)))
                         .attr('r', 0)
@@ -554,7 +581,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 default: break;
             }
             svg.transition().duration(2000)
@@ -581,7 +608,7 @@ module powerbi.extensibility.visual {
                         .attr('fill', 'none')
                         .attr('stroke', 'black');
                 }
-                                    break;
+                    break;
                 case 'Animation 2': {
                     svg.attr('x', 21)
                         .attr('y', 0)
@@ -589,7 +616,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 21)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 3': {
                     svg.attr('x', (20 * iRow))
                         .attr('y', 0)
@@ -597,7 +624,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 21)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 4': {
                     svg.attr('x', 21 * iRow)
                         .attr('y', (21 * iColumn))
@@ -605,7 +632,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 21)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 5': {
                     svg.attr('transform', 'translate(0,0)')
                         .attr('height', 21)
@@ -613,7 +640,7 @@ module powerbi.extensibility.visual {
                         .attr('x', ((400 * (iColumn)) + (50 * iRow)))
                         .attr('width', 21);
                 }
-                                    break;
+                    break;
                 default: break;
             }
             svg.transition().duration(2000)
@@ -642,7 +669,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 2': {
                     svg.attr('x', 0)
                         .attr('y', 0)
@@ -650,7 +677,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 0)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 3': {
                     svg.attr('x', (20 * iRow))
                         .attr('y', 0)
@@ -658,7 +685,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 4': {
                     svg.attr('x', 20 * iRow)
                         .attr('y', (20 * iColumn))
@@ -666,7 +693,7 @@ module powerbi.extensibility.visual {
                         .attr('height', 20)
                         .attr('fill', 'none');
                 }
-                                    break;
+                    break;
                 case 'Animation 5': {
                     svg.attr('transform', 'translate(0,0)')
                         .attr('height', 20)
@@ -674,7 +701,7 @@ module powerbi.extensibility.visual {
                         .attr('x', ((400 * (iColumn)) + (50 * iRow)))
                         .attr('width', 20);
                 }
-                                    break;
+                    break;
                 default: break;
             }
             svg.attr('transform', `rotate(45, ${20 * iColumn}, ${20 * iRow})`);
@@ -693,23 +720,240 @@ module powerbi.extensibility.visual {
             this.svgs[iRow + colonLiteral + iColumn][custLegValLiteral] = '';
         }
 
-        /** Update is called for data updates, resizes & formatting changes */
-        // tslint:disable-next-line:cyclomatic-complexity
-        public update(options: VisualUpdateOptions): void {
-            d3.selectAll('.matrix svg > *').remove();
-            d3.selectAll('.legend #legendGroup').selectAll('*').remove();
-            const THIS: this = this;
-            this.svgs = {};
-            this.root.select('.MAQChartsSvgRoot').remove();
-            d3.select(`.bc_ErrorMessage`).remove();
-            d3.select(`.bc_ErrorMsg`).remove();
-            let dataView: DataView;
-            dataView = this.dataView = options.dataViews[0];
-            this.data = BrickChart.converter(this.dataView, this.host);
-            let format: string;
-            format = '0';
-            let formatter: IValueFormatter;
-            if (this.data.dataPoints.length === 0 &&  dataView.categorical.categories === undefined) {
+
+        private animation(iRow: number, iColumn: number, options: VisualUpdateOptions) {
+            let objects: DataViewObjects = options.dataViews[0].metadata.objects;
+            this.data.ComponentShape.shape = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, { objectName: 'ComponentShape', propertyName: 'shape' }, this.data.ComponentShape.shape);
+            this.data.ComponentShape.Bricks = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, { objectName: 'ComponentShape', propertyName: 'Bricks' }, this.data.ComponentShape.Bricks);
+            this.data.AnimationType.sqDot = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, { objectName: 'AnimationType', propertyName: 'sqDot' }, this.data.AnimationType.sqDot);
+
+            //Code For Animation
+            if (!this.data.settings.showAnimation) {
+                this.data.AnimationType.sqDot = '';
+            }
+            if (this.data.ComponentShape.shape === boxShape[0]) {
+                flag = 0;
+                this.svg.attr('width', 200);
+            } else if (this.data.ComponentShape.shape === boxShape[1]) {
+                flag = 1;
+                this.svg.attr('width', 400);
+            }
+
+            if (this.data.ComponentShape.Bricks === brickType[0]) {
+                if (flag === 1) {
+                    let svg: d3.Selection<SVGElement>;
+                    for (iRow = 0; iRow < 10; iRow++) {
+                        for (iColumn = 0; iColumn < 20; iColumn++) {
+                            svg = this.svg
+                                .append('circle')
+                                .classed('linearSVG', true)
+                                .attr('id', `brick${iRow}-${iColumn}`);
+                            this.circleAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                        }
+                    }
+                } else if (flag === 0) {
+                    if (this.data.dataPoints.length > 100) { //Code for values > 100
+                        m = this.data.dataPoints.length;
+                        n = Math.ceil(Math.sqrt(m));
+                        let svg: d3.Selection<SVGElement>;
+                        for (iRow = 0; iRow < n; iRow++) {
+                            for (iColumn = 0; iColumn < n; iColumn++) {
+                                svg = this.svg
+                                    .append('circle')
+                                    .classed('linearSVG', true)
+                                    .attr('id', `brick${iRow}-${iColumn}`);
+                                this.circleAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                            }
+                        }
+                    } else {
+                        let svg: d3.Selection<SVGElement>;
+                        for (iRow = 0; iRow < 10; iRow++) {
+                            for (iColumn = 0; iColumn < 10; iColumn++) {
+                                svg = this.svg
+                                    .append('circle')
+                                    .classed('linearSVG', true)
+                                    .attr('id', `brick${iRow}-${iColumn}`);
+                                this.circleAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                            }
+                        }
+                    }
+                }
+                d3.select('svg').style('margin-left', '10px').style('margin-top', '10px').style('overflow', 'visible');
+
+            }
+            return objects;
+        }
+        private selection(iRow: number, iColumn: number) {
+            if (this.data.ComponentShape.Bricks === brickType[1]) {
+                if (flag === 1) {
+                    let svg: d3.Selection<SVGElement>;
+                    for (iRow = 0; iRow < 10; iRow++) {
+                        for (iColumn = 0; iColumn < 20; iColumn++) {
+                            svg = this.svg
+                                .append('rect')
+                                .classed('linearSVG', true)
+                                .attr('id', `brick${iRow}-${iColumn}`);
+                            this.boxAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                        }
+                    }
+                } else if (flag === 0) {
+                    if (this.data.dataPoints.length > 100) { //Code for values > 100
+                        m = this.data.dataPoints.length;
+                        n = Math.ceil(Math.sqrt(m));
+                        for (iRow = 0; iRow < n; iRow++) {
+                            for (iColumn = 0; iColumn < n; iColumn++) {
+                                let svg: d3.Selection<SVGElement>;
+                                svg = this.svg
+                                    .append('rect')
+                                    .classed('linearSVG', true)
+                                    .attr('id', `brick${iRow}-${iColumn}`);
+                                this.boxAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                            }
+                        }
+                    } else {
+                        for (iRow = 0; iRow < 10; iRow++) {
+                            for (iColumn = 0; iColumn < 10; iColumn++) {
+                                let svg: d3.Selection<SVGElement>;
+                                svg = this.svg
+                                    .append('rect')
+                                    .classed('linearSVG', true)
+                                    .attr('id', `brick${iRow}-${iColumn}`);
+                                this.boxAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                            }
+                        }
+                    }
+                }
+                d3.select('svg').style('margin-left', '0px').style('margin-top', '0px').style('overflow', 'visible');
+
+            } else if (this.data.ComponentShape.Bricks === brickType[2]) {
+                if (flag === 1) {
+                    for (iRow = 0; iRow < 10; iRow++) {
+                        for (iColumn = 0; iColumn < 20; iColumn++) {
+                            let svg: d3.Selection<SVGElement>;
+                            svg = this.svg
+                                .append('rect')
+                                .classed('linearSVG', true)
+                                .attr('id', `brick${iRow}-${iColumn}`);
+                            this.diamondAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                        }
+                    }
+                } else if (flag === 0) {
+                    if (this.data.dataPoints.length > 100) { //Code for values > 100
+                        m = this.data.dataPoints.length;
+                        n = Math.ceil(Math.sqrt(m));
+                        n = Math.ceil(n);
+                        for (iRow = 0; iRow < n; iRow++) {
+                            for (iColumn = 0; iColumn < n; iColumn++) {
+                                let svg: d3.Selection<SVGElement>;
+                                svg = this.svg
+                                    .append('rect')
+                                    .classed('linearSVG', true)
+                                    .attr('id', `brick${iRow}-${iColumn}`);
+                                this.diamondAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                            }
+                        }
+                    } else {
+                        for (iRow = 0; iRow < 10; iRow++) {
+                            for (iColumn = 0; iColumn < 10; iColumn++) {
+                                let svg: d3.Selection<SVGElement>;
+                                svg = this.svg
+                                    .append('rect');
+                                svg.classed('linearSVG', true)
+                                    .attr('id', `brick${iRow}-${iColumn}`);
+                                this.diamondAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
+                            }
+                        }
+                    }
+                }
+                d3.select('svg').style('margin-left', '10px').style('margin-top', '0px').style('overflow', 'visible');
+            }
+        }
+        private square(this: any, index: number, dataView: DataView, counter: number, formatter: IValueFormatter, cnt: number, category: number, last: number) {
+            for (index = 0; index < cnt; index++) {
+                if (index >= 200) {
+                    break;
+                }
+                let row: number;
+                let col: number;
+                row = Math.floor((last + index) / 10);
+                col = (last + index) % 10;
+                if (!this.svgs[col + colonLiteral + row]) {
+                    break;
+                }
+                this.svgs[col + colonLiteral + row].setAttribute('class', `linearSVG category-clr${category}`);
+                this.root.select(`#brick${col}-${row}`).data(this.data);
+                this.svgs[col + colonLiteral + row][custLegIndLiteral] = category;
+                this.svgs[col + colonLiteral + row][custLegNameLiteral] = this.data.dataPoints[counter].label;
+                this.svgs[col + colonLiteral + row][custLegValLiteral] = this.data.dataPoints[counter].value;
+                let toolTipInfo: ITooltipDataItem[];
+                toolTipInfo = [];
+                toolTipInfo.push(
+                    {
+                        displayName: dataView.categorical.categories[0].source.displayName,
+                        value: this.data.dataPoints[counter].label + nullLiteral,
+                        selector: this.data.dataPoints[counter].selector
+                    });
+                toolTipInfo.push(
+                    {
+                        displayName: dataView.categorical.values[0].source.displayName,
+                        value: formatter.format(this.data.dataPoints[counter].value),
+                        selector: this.data.dataPoints[counter].selector
+                    });
+                this.svgs[col + colonLiteral + row]['cust-tooltip'] = toolTipInfo;
+                this.toolTipInfo[counter] = toolTipInfo;
+            }
+        }
+        private fillcolor(objects: DataViewObjects, options: VisualUpdateOptions, sum: number, THIS: any) {
+            if (options.dataViews && options.dataViews[0] && options.dataViews[0].metadata && options.dataViews[0].metadata.objects) {
+                objects = options.dataViews[0].metadata.objects;
+                this.data.settings.showLegend = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                    objects, { objectName: 'legend', propertyName: 'show' }, this.data.settings.showLegend);
+                this.data.settings.showAnimation = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                    objects, { objectName: 'AnimationType', propertyName: 'show' }, this.data.settings.showAnimation);
+                this.data.borderColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                    objects, { objectName: 'general', propertyName: 'borderColor' }, this.data.borderColor);
+                this.data.legendData.title = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                    objects, { objectName: 'legend', propertyName: 'titleText' }, this.data.legendData.title);
+                this.rootElement.select('svg.svg')
+                    .selectAll('rect, circle')
+                    .style('stroke', this.data.borderColor);
+                let ind: number;
+                ind = 0;
+                let k1: number;
+                for (k1 = 0; k1 < _.keys(this.data.categories).length; k1++) {
+                    let clr: string;
+                    clr = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                        objects,
+                        { objectName: `dataPoint_${ind}`, propertyName: _.keys(this.data.categories)[k1] }, '');
+                    ind++;
+                }
+            } this.renderLegend(this.data, sum);
+            this.updateStyleColor();
+            this.tooltipServiceWrapper.addTooltip(
+                d3.selectAll('.linearSVG'), (tooltipEvent: tooltip.TooltipEventArgs<IBrickChartDataPoint>) => {
+                    return tooltipEvent.context['cust-tooltip'];
+                },
+                (tooltipEvent: tooltip.TooltipEventArgs<IBrickChartDataPoint>) => tooltipEvent.context['cust-tooltip'][0].selector, true);
+            this.updateZoom(options);
+            this.addBrickSelection();
+            this.addLegendSelection();
+            $(document).on('click.load', '.navArrow', (): void => {
+                THIS.addLegendSelection();
+            });
+            d3.select('html').on('click', (): void => {
+                THIS.selectionManager.clear();
+                const rect: any = THIS.root.selectAll('.linearSVG');
+                rect.attr('fill-opacity', 1)
+                    .attr('opacity', 1);
+                THIS.root.selectAll('.legendItem').attr('fill-opacity', 1);
+            });
+        }
+
+        public format(dataView: DataView, format: string, formatter: IValueFormatter): IValueFormatter {
+            if (this.data.dataPoints.length === 0 && dataView.categorical.categories === undefined) {
                 d3.selectAll('.legend #legendGroup').selectAll('*').style('visibility', 'hidden');
                 const message: string = 'Please insert data in Category field';
                 this.root
@@ -717,7 +961,6 @@ module powerbi.extensibility.visual {
                     .classed('bc_ErrorMessage', true)
                     .text(message)
                     .attr('title', message);
-
                 return;
             }
             if (this.data.dataPoints.length === 0 && dataView.categorical.values === undefined) {
@@ -728,7 +971,6 @@ module powerbi.extensibility.visual {
                     .classed('bc_ErrorMessage', true)
                     .text(message)
                     .attr('title', message);
-
                 return;
             }
             if (dataView && dataView.categorical && dataView.categorical.values &&
@@ -738,7 +980,106 @@ module powerbi.extensibility.visual {
             } else {
                 formatter = valueFormatter.create({ value: 0, precision: 2, allowFormatBeautification: true });
             }
-
+            return formatter;
+        }
+        private bricks(bricksArray: number[], category: number, last: number, dataView: DataView, formatter: IValueFormatter) {
+            let counter: number;
+            for (counter = 0; counter < this.data.dataPoints.length; counter++) {
+                const data: IBrickChartDataPoint[] = [];
+                data.push(this.data.dataPoints[counter]);
+                if (this.data.dataPoints[counter].value > 0) {
+                    let cnt: number;
+                    cnt = bricksArray[counter];
+                    if (cnt > 0) {
+                        category++;
+                        let index: number;
+                        for (index = 0; index < cnt; index++) {
+                            if (index >= 100) {
+                                break;
+                            }
+                            let row: number;
+                            let col: number;
+                            if (this.data.dataPoints.length > 100) {
+                                row = Math.floor((last + index) / n);
+                                col = (last + index) % n;
+                            } else {
+                                row = Math.floor((last + index) / 10);
+                                col = (last + index) % 10;
+                            }
+                            if (!this.svgs[col + colonLiteral + row]) {
+                                break;
+                            }
+                            this.svgs[col + colonLiteral + row].setAttribute('class', `linearSVG category-clr${category}`);
+                            this.root.select(`#brick${col}-${row}`).data(data);
+                            this.svgs[col + colonLiteral + row][custLegIndLiteral] = category;
+                            this.svgs[col + colonLiteral + row][custLegNameLiteral] = this.data.dataPoints[counter].label;
+                            this.svgs[col + colonLiteral + row][custLegValLiteral] = this.data.dataPoints[counter].value;
+                            let toolTipInfo: ITooltipDataItem[];
+                            toolTipInfo = [];
+                            toolTipInfo.push(
+                                {
+                                    displayName: dataView.categorical.categories[0].source.displayName,
+                                    value: this.data.dataPoints[counter].label + nullLiteral,
+                                    selector: this.data.dataPoints[counter].selector
+                                });
+                            toolTipInfo.push(
+                                {
+                                    displayName: dataView.categorical.values[0].source.displayName,
+                                    value: formatter.format(this.data.dataPoints[counter].value),
+                                    selector: this.data.dataPoints[counter].selector
+                                });
+                            this.svgs[col + colonLiteral + row]['cust-tooltip'] = toolTipInfo;
+                            this.toolTipInfo[counter] = toolTipInfo;
+                        }
+                        last += cnt;
+                    }
+                }
+            }
+        }
+        private leg(category: number, last: number, dataView: DataView, formatter: IValueFormatter, sum: number) {
+            const bricksArray: number[] = [];
+            let totalSum: number = 0;
+            for (let iCount: number = 0; iCount < this.data.dataPoints.length; iCount++) {
+                bricksArray[iCount] = Math.round(100 * (this.data.dataPoints[iCount].value / sum)) === 0 ?
+                    1 : Math.round(100 * (this.data.dataPoints[iCount].value / sum));
+                totalSum += bricksArray[iCount];
+            }
+            if (totalSum > 100) {
+                const max: number = Math.max.apply(null, bricksArray);
+                const index: number = bricksArray.indexOf(max);
+                const difference: number = totalSum - 100;
+                bricksArray[index] = bricksArray[index] - difference;
+            }
+            if (this.data.dataPoints.length < 1000) {
+                this.bricks(bricksArray, category, last, dataView, formatter);
+            } else {
+                d3.selectAll('.legend #legendGroup').selectAll('*').style('visibility', 'hidden');
+                const msg: string = 'Length of categories should be less than 1000';
+                this.root.append('div')
+                    .classed('bc_ErrorMsg', true)
+                    .text(msg)
+                    .attr('title', msg);
+                return;
+            }
+        }
+        // Update is called for data updates, resizes & formatting changes //
+        // tslint:disable-next-line:cyclomatic-complexity
+        public update(options: VisualUpdateOptions): void {
+            this.events.renderingStarted(options);
+            d3.selectAll('.matrix svg > *').remove();
+            d3.selectAll('.legend #legendGroup').selectAll('*').remove();
+            const THIS: this = this;
+            this.svgs = {};
+            this.root.select('.MAQChartsSvgRoot').remove();
+            d3.select(`.bc_ErrorMessage`).remove();
+            d3.select(`.bc_ErrorMsg`).remove();
+            let dataView: DataView;
+            dataView = this.dataView = options.dataViews[0];
+            this.data = visual.CONVERTER(this.dataView, this.host);
+            let format: string;
+            format = '0';
+            let formatter: IValueFormatter;
+            formatter = this.format(dataView, format, formatter);
             let dataSet: {};
             dataSet = {};
             dataSet = this.data.categories;
@@ -752,157 +1093,10 @@ module powerbi.extensibility.visual {
             this.svgs = {};
             let iRow: number;
             let iColumn: number;
-
             if (options.dataViews && options.dataViews[0] && options.dataViews[0].metadata) {
-                let objects: DataViewObjects = options.dataViews[0].metadata.objects;
-                this.data.ComponentShape.shape = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, { objectName: 'ComponentShape', propertyName: 'shape' }, this.data.ComponentShape.shape);
-                this.data.ComponentShape.Bricks = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, { objectName: 'ComponentShape', propertyName: 'Bricks' }, this.data.ComponentShape.Bricks);
-                this.data.AnimationType.sqDot = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, { objectName: 'AnimationType', propertyName: 'sqDot' }, this.data.AnimationType.sqDot);
-
-                //Code For Animation
-                if (!this.data.settings.showAnimation) {
-                    this.data.AnimationType.sqDot = '';
-                }
-                if (this.data.ComponentShape.shape === boxShape[0]) {
-                    flag = 0;
-                    this.svg.attr('width', 200);
-                } else if (this.data.ComponentShape.shape === boxShape[1]) {
-                    flag = 1;
-                    this.svg.attr('width', 400);
-                }
-
-                if (this.data.ComponentShape.Bricks === brickType[0]) {
-                    if (flag === 1) {
-                        let svg: d3.Selection<SVGElement>;
-                        for (iRow = 0; iRow < 10; iRow++) {
-                            for (iColumn = 0; iColumn < 20; iColumn++) {
-                                svg = this.svg
-                                    .append('circle')
-                                    .classed('linearSVG', true)
-                                    .attr('id', `brick${iRow}-${iColumn}`);
-                                this.circleAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                            }
-                        }
-                    } else if (flag === 0) {
-                        if (this.data.dataPoints.length > 100) { //Code for values > 100
-                            m = this.data.dataPoints.length;
-                            n = Math.sqrt(m);
-                            n = Math.ceil(n);
-                            let svg: d3.Selection<SVGElement>;
-                            for (iRow = 0; iRow < n; iRow++) {
-                                for (iColumn = 0; iColumn < n; iColumn++) {
-                                    svg = this.svg
-                                        .append('circle')
-                                        .classed('linearSVG', true)
-                                        .attr('id', `brick${iRow}-${iColumn}`);
-                                    this.circleAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                                }
-                            }
-                        } else {
-                            let svg: d3.Selection<SVGElement>;
-                            for (iRow = 0; iRow < 10; iRow++) {
-                                for (iColumn = 0; iColumn < 10; iColumn++) {
-                                    svg = this.svg
-                                        .append('circle')
-                                        .classed('linearSVG', true)
-                                        .attr('id', `brick${iRow}-${iColumn}`);
-                                    this.circleAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                                }
-                            }
-                        }
-                    }
-                    d3.select('svg').style('margin-left', '10px').style('margin-top', '10px').style('overflow', 'visible');
-
-                } else if (this.data.ComponentShape.Bricks === brickType[1]) {
-                    if (flag === 1) {
-                        let svg: d3.Selection<SVGElement>;
-                        for (iRow = 0; iRow < 10; iRow++) {
-                            for (iColumn = 0; iColumn < 20; iColumn++) {
-                                svg = this.svg
-                                    .append('rect')
-                                    .classed('linearSVG', true)
-                                    .attr('id', `brick${iRow}-${iColumn}`);
-                                this.boxAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                            }
-                        }
-                    } else if (flag === 0) {
-                        if (this.data.dataPoints.length > 100) { //Code for values > 100
-                            m = this.data.dataPoints.length;
-                            n = Math.sqrt(m);
-                            n = Math.ceil(n);
-                            for (iRow = 0; iRow < n; iRow++) {
-                                for (iColumn = 0; iColumn < n; iColumn++) {
-                                    let svg: d3.Selection<SVGElement>;
-                                    svg = this.svg
-                                        .append('rect')
-                                        .classed('linearSVG', true)
-                                        .attr('id', `brick${iRow}-${iColumn}`);
-                                    this.boxAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                                }
-                            }
-                        } else {
-                            for (iRow = 0; iRow < 10; iRow++) {
-                                for (iColumn = 0; iColumn < 10; iColumn++) {
-                                    let svg: d3.Selection<SVGElement>;
-                                    svg = this.svg
-                                        .append('rect')
-                                        .classed('linearSVG', true)
-                                        .attr('id', `brick${iRow}-${iColumn}`);
-                                    this.boxAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                                }
-                            }
-                        }
-                    }
-                    d3.select('svg').style('margin-left', '0px').style('margin-top', '0px').style('overflow', 'visible');
-
-                } else if (this.data.ComponentShape.Bricks === brickType[2]) {
-                    if (flag === 1) {
-                        for (iRow = 0; iRow < 10; iRow++) {
-                            for (iColumn = 0; iColumn < 20; iColumn++) {
-                                let svg: d3.Selection<SVGElement>;
-                                svg = this.svg
-                                    .append('rect')
-                                    .classed('linearSVG', true)
-                                    .attr('id', `brick${iRow}-${iColumn}`);
-                                this.diamondAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                            }
-                        }
-                    } else if (flag === 0) {
-                        if (this.data.dataPoints.length > 100) { //Code for values > 100
-                            m = this.data.dataPoints.length;
-                            n = Math.sqrt(m);
-                            n = Math.ceil(n);
-                            for (iRow = 0; iRow < n; iRow++) {
-                                for (iColumn = 0; iColumn < n; iColumn++) {
-                                    let svg: d3.Selection<SVGElement>;
-                                    svg = this.svg
-                                        .append('rect')
-                                        .classed('linearSVG', true)
-                                        .attr('id', `brick${iRow}-${iColumn}`);
-                                    this.diamondAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                                }
-                            }
-                        } else {
-                            for (iRow = 0; iRow < 10; iRow++) {
-                                for (iColumn = 0; iColumn < 10; iColumn++) {
-                                    let svg: d3.Selection<SVGElement>;
-                                    svg = this.svg
-                                        .append('rect');
-                                    svg.classed('linearSVG', true)
-                                    .attr('id', `brick${iRow}-${iColumn}`);
-                                    this.diamondAnimation(this.data.AnimationType.sqDot, svg, iRow, iColumn);
-                                }
-                            }
-                        }
-                    }
-                    d3.select('svg').style('margin-left', '10px').style('margin-top', '0px').style('overflow', 'visible');
-                }
-                if (this.data.ComponentShape.shape === boxShape[1]) {
-                    d3.select('.brickchart_topContainer').style('width', '80%');
-                }
+                let objects = this.animation(iRow, iColumn, options);
+                this.selection(iRow, iColumn);
+                if (this.data.ComponentShape.shape === boxShape[1]) d3.select('.brickchart_topContainer').style('width', '80%');
                 x = iRow;
                 y = iColumn;
                 let last: number;
@@ -934,39 +1128,7 @@ module powerbi.extensibility.visual {
                                 if (cnt > 0) {
                                     category++;
                                     let index: number;
-                                    for (index = 0; index < cnt; index++) {
-                                        if (index >= 200) {
-                                            break;
-                                        }
-                                        let row: number;
-                                        let col: number;
-                                        row = Math.floor((last + index) / 10);
-                                        col = (last + index) % 10;
-                                        if (!this.svgs[col + colonLiteral + row]) {
-                                            break;
-                                        }
-                                        this.svgs[col + colonLiteral + row].setAttribute('class', `linearSVG category-clr${category}`);
-                                        this.root.select(`#brick${col}-${row}`).data(data);
-                                        this.svgs[col + colonLiteral + row][custLegIndLiteral] = category;
-                                        this.svgs[col + colonLiteral + row][custLegNameLiteral] = this.data.dataPoints[counter].label;
-                                        this.svgs[col + colonLiteral + row][custLegValLiteral] = this.data.dataPoints[counter].value;
-                                        let toolTipInfo: ITooltipDataItem[];
-                                        toolTipInfo = [];
-                                        toolTipInfo.push(
-                                            {
-                                                displayName: dataView.categorical.categories[0].source.displayName,
-                                                value: this.data.dataPoints[counter].label + nullLiteral,
-                                                selector: this.data.dataPoints[counter].selector
-                                            });
-                                        toolTipInfo.push(
-                                            {
-                                                displayName: dataView.categorical.values[0].source.displayName,
-                                                value: formatter.format(this.data.dataPoints[counter].value),
-                                                selector: this.data.dataPoints[counter].selector
-                                            });
-                                        this.svgs[col + colonLiteral + row]['cust-tooltip'] = toolTipInfo;
-                                        this.toolTipInfo[counter] = toolTipInfo;
-                                    }
+                                    this.square(index, dataView, counter, formatter, cnt, category, last);
                                     last += cnt;
                                 }
                             }
@@ -978,141 +1140,18 @@ module powerbi.extensibility.visual {
                             .classed('bc_ErrorMsg', true)
                             .text(msg)
                             .attr('title', msg);
-
                         return;
                     }
                 } else {
-                    const bricksArray: number[] = [];
-                    let totalSum: number = 0;
-                    for (let iCount: number = 0; iCount < this.data.dataPoints.length; iCount++) {
-                        bricksArray[iCount] = Math.round(100 * (this.data.dataPoints[iCount].value / sum)) === 0 ?
-                            1 : Math.round(100 * (this.data.dataPoints[iCount].value / sum));
-                        totalSum += bricksArray[iCount];
-                    }
-                    if (totalSum > 100) {
-                        const max: number = Math.max.apply(null, bricksArray);
-                        const index: number = bricksArray.indexOf(max);
-                        const difference: number = totalSum - 100;
-                        bricksArray[index] = bricksArray[index] - difference;
-                    }
-                    if (this.data.dataPoints.length < 1000) {
-                        let counter: number;
-                        for (counter = 0; counter < this.data.dataPoints.length; counter++) {
-                            const data: IBrickChartDataPoint[] = [];
-                            data.push(this.data.dataPoints[counter]);
-                            if (this.data.dataPoints[counter].value > 0) {
-                                let cnt: number;
-                                cnt = bricksArray[counter];
-                                if (cnt > 0) {
-                                    category++;
-                                    let index: number;
-                                    for (index = 0; index < cnt; index++) {
-                                        if (index >= 100) {
-                                            break;
-                                        }
-                                        let row: number;
-                                        let col: number;
-                                        if (this.data.dataPoints.length > 100) {
-                                            row = Math.floor((last + index) / n);
-                                            col = (last + index) % n;
-                                        } else {
-                                            row = Math.floor((last + index) / 10);
-                                            col = (last + index) % 10;
-                                        }
-                                        if (!this.svgs[col + colonLiteral + row]) {
-                                            break;
-                                        }
-                                        this.svgs[col + colonLiteral + row].setAttribute('class', `linearSVG category-clr${category}`);
-                                        this.root.select(`#brick${col}-${row}`).data(data);
-                                        this.svgs[col + colonLiteral + row][custLegIndLiteral] = category;
-                                        this.svgs[col + colonLiteral + row][custLegNameLiteral] = this.data.dataPoints[counter].label;
-                                        this.svgs[col + colonLiteral + row][custLegValLiteral] = this.data.dataPoints[counter].value;
-                                        let toolTipInfo: ITooltipDataItem[];
-                                        toolTipInfo = [];
-                                        toolTipInfo.push(
-                                            {
-                                                displayName: dataView.categorical.categories[0].source.displayName,
-                                                value: this.data.dataPoints[counter].label + nullLiteral,
-                                                selector: this.data.dataPoints[counter].selector
-                                            });
-                                        toolTipInfo.push(
-                                            {
-                                                displayName: dataView.categorical.values[0].source.displayName,
-                                                value: formatter.format(this.data.dataPoints[counter].value),
-                                                selector: this.data.dataPoints[counter].selector
-                                            });
-                                        this.svgs[col + colonLiteral + row]['cust-tooltip'] = toolTipInfo;
-                                        this.toolTipInfo[counter] = toolTipInfo;
-                                    }
-                                    last += cnt;
-                                }
-                            }
-                        }
-                    } else {
-                        d3.selectAll('.legend #legendGroup').selectAll('*').style('visibility', 'hidden');
-                        const msg: string = 'Length of categories should be less than 1000';
-                        this.root.append('div')
-                            .classed('bc_ErrorMsg', true)
-                            .text(msg)
-                            .attr('title', msg);
-
-                        return;
-                    }
+                    this.leg(category, last, dataView, formatter, sum);
                 }
                 objects = null;
-                if (options.dataViews && options.dataViews[0] && options.dataViews[0].metadata && options.dataViews[0].metadata.objects) {
-                    objects = options.dataViews[0].metadata.objects;
-                    this.data.settings.showLegend = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                        objects, { objectName: 'legend', propertyName: 'show' }, this.data.settings.showLegend);
-                    this.data.settings.showAnimation = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                        objects, { objectName: 'AnimationType', propertyName: 'show' }, this.data.settings.showAnimation);
-                    this.data.borderColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                        objects, { objectName: 'general', propertyName: 'borderColor' }, this.data.borderColor);
-                    this.data.legendData.title = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                        objects, { objectName: 'legend', propertyName: 'titleText' }, this.data.legendData.title);
-                    this.rootElement.select('svg.svg')
-                        .selectAll('rect, circle')
-                        .style('stroke', this.data.borderColor);
-                    let ind: number;
-                    ind = 0;
-                    let k1: number;
-                    for (k1 = 0; k1 < _.keys(this.data.categories).length; k1++) {
-                        let clr: string;
-                        clr = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                            objects,
-                            { objectName: `dataPoint_${ind}`, propertyName: _.keys(this.data.categories)[k1] }, '');
-                        ind++;
-                    }
-                }
-                this.renderLegend(this.data, sum);
-                this.updateStyleColor();
-                this.tooltipServiceWrapper.addTooltip(
-                    d3.selectAll('.linearSVG'), (tooltipEvent: tooltip.TooltipEventArgs<IBrickChartDataPoint>) => {
-                        return tooltipEvent.context['cust-tooltip'];
-                    },
-                    // tslint:disable-next-line:max-line-length
-                    (tooltipEvent: tooltip.TooltipEventArgs<IBrickChartDataPoint>) => tooltipEvent.context['cust-tooltip'][0].selector, true);
-                this.updateZoom(options);
-                this.addBrickSelection();
-                this.addLegendSelection();
-                // tslint:disable-next-line:no-any
-                $(document).on('click.load', '.navArrow', function (): void {
-                    THIS.addLegendSelection();
-                });
-                d3.select('html').on('click', function (): void {
-                    THIS.selectionManager.clear();
-                    // tslint:disable-next-line:no-any
-                    const rect: any = THIS.root.selectAll('.linearSVG');
-                    rect.attr('fill-opacity', 1)
-                        .attr('opacity', 1);
-                    THIS.root.selectAll('.legendItem').attr('fill-opacity', 1);
-                     });
-            }
+                this.fillcolor(objects, options, sum, this);
+          }
             this.svg.on('contextmenu', () => {
-                const mouseEvent: MouseEvent = d3.event as MouseEvent;
+                const mouseEvent: MouseEvent = <MouseEvent>d3.event;
                 const eventTarget: EventTarget = mouseEvent.target;
-                // tslint:disable-next-line:no-any
-                const dataPoint : any = d3.select(eventTarget).datum();
+                const dataPoint: any = d3.select(eventTarget).datum();
                 if (dataPoint !== undefined) {
                     this.selectionManager.showContextMenu(dataPoint ? dataPoint.selector : {}, {
                         x: mouseEvent.clientX,
@@ -1121,22 +1160,18 @@ module powerbi.extensibility.visual {
                     mouseEvent.preventDefault();
                 }
             });
+            this.events.renderingFinished(options);
         }
 
         private addLegendSelection(): void {
             const THIS: this = this;
-            // tslint:disable-next-line:no-any
             let legends: any;
             legends = this.root.selectAll('.legend .legendItem');
-            // tslint:disable-next-line:no-any
             let bricks: any;
             bricks = THIS.root.selectAll('.linearSVG');
             let selectionManager: ISelectionManager;
             selectionManager = this.selectionManager;
-
-            // tslint:disable-next-line:no-any
-            legends.on('click', function (d: any): void {
-                // tslint:disable-next-line:no-any
+            legends.on('click',(d:any) => {
                 selectionManager.select(d.identity).then((ids: any[]) => {
                     const len: number = bricks[0].length - 1;
                     for (let v: number = 0; v <= len; v++) {
@@ -1153,7 +1188,7 @@ module powerbi.extensibility.visual {
                     legends.attr({
                         'fill-opacity': ids.length > 0 ? 0.5 : 1
                     });
-                    d3.select(this).attr({
+                    d3.select(event.currentTarget).attr({
                         'fill-opacity': 1
                     });
                     if (ids.length < 1) {
@@ -1169,24 +1204,20 @@ module powerbi.extensibility.visual {
         private addBrickSelection(): void {
             let THIS: this;
             THIS = this;
-            // tslint:disable-next-line:no-any
             let bricks: any;
             bricks = this.root.selectAll('.linearSVG');
             let selectionManager: ISelectionManager;
             selectionManager = this.selectionManager;
-            // tslint:disable-next-line:no-any
-            bricks.on('click', function (d: any): void {
-                // tslint:disable-next-line:no-any
+            bricks.on('click', (d: any): void => {
                 let legends: any;
                 legends = THIS.root.selectAll('.legend .legendItem');
                 legends.attr({
                     'fill-opacity': 1
                 });
-                // tslint:disable-next-line:no-any
                 selectionManager.select(d.selector).then((ids: any[]) => {
                     const len: number = bricks[0].length - 1;
                     for (let v: number = 0; v <= len; v++) {
-                        if (this.cust_leg_name === bricks[0][v].cust_leg_name) {
+                        if (d.label === bricks[0][v].cust_leg_name) {
                             bricks[0][v].setAttribute('fill-opacity', 1);
                         } else {
                             bricks[0][v].setAttribute('fill-opacity', 0.5);
@@ -1246,7 +1277,7 @@ module powerbi.extensibility.visual {
             }
             let iIterator: number;
             iIterator = 0;
-            legendDataTorender.dataPoints.forEach(function (ele: legend.LegendDataPoint): void {
+            legendDataTorender.dataPoints.forEach((ele: legend.LegendDataPoint): void => {
                 ele.color = brickChartData.dataPoints[iIterator++].color;
             });
             if (this.legendObjectProperties) {
@@ -1267,7 +1298,7 @@ module powerbi.extensibility.visual {
             let enumeration: VisualObjectInstance[];
             enumeration = [];
             if (!this.data) {
-                this.data = BrickChart.getDefaultData();
+                this.data = visual.GETDEFAULTDATA();
             }
             switch (objectName) {
                 case 'general':

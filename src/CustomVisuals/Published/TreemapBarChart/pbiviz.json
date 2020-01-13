@@ -4,12 +4,12 @@
     "displayName": "Treemap Bar Chart by MAQ Software",
     "guid": "treemapbarchart333E076637E345EDB9829C52846D5A31",
     "visualClassName": "TreemapBar",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "description": "A treemap chart visual categorizes the data in groups and represent data in hierarchical structure",
     "supportUrl": "https://github.com/maqsoftware/PowerBI-visuals/issues",
     "gitHubUrl": "https://github.com/maqsoftware/PowerBI-visuals/"
   },
-  "apiVersion": "2.3.0",
+  "apiVersion": "2.5.0",
   "author": {
     "name": "MAQ Software",
     "email": "support@maqsoftware.com"
