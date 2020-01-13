@@ -25,7 +25,7 @@
  */
 
 module powerbi.visuals {
-    export module DateUtil {
+    export module dateUtils {
          export function isEqual(date1: Date, date2: Date): boolean {
             if (date1 == null && date2 == null) {
                 return true;

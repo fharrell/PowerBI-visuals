@@ -24,14 +24,25 @@
  *  THE SOFTWARE.
  */
 
-/* Please make sure that this path is correct */
+// Please make sure that this path is correct //
 
 module powerbi.extensibility.visual {
     import VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
-    import ValueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
-    import AxisHelper = powerbi.extensibility.utils.chart.axis;
+    import valueFormatter = powerbi.extensibility.utils.formatting.valueFormatter;
+    import axis = powerbi.extensibility.utils.chart.axis;
     import TextProperties = powerbi.extensibility.utils.formatting.TextProperties;
     import textMeasurementService = powerbi.extensibility.utils.formatting.textMeasurementService;
+    import tooltip = powerbi.extensibility.utils.tooltip;
+    import ITooltipServiceWrapper = powerbi.extensibility.utils.tooltip.ITooltipServiceWrapper;
+    import createTooltipServiceWrapper = powerbi.extensibility.utils.tooltip.createTooltipServiceWrapper;
+    export interface TooltipEventArgs<TData> {
+        data: TData;
+        coordinates: number[];
+        elementCoordinates: number[];
+        context: HTMLElement;
+        isTouchEvent: boolean;
+    }
+
 
     const dateLiteral: string = 'date';
     const openLiteral: string = 'open';
@@ -174,6 +185,7 @@ module powerbi.extensibility.visual {
     export class StockChart implements IVisual {
         //Variables
         private svg: d3.Selection<SVGElement>;
+        private events: IVisualEventService;
         private tooltipServiceWrapper: ITooltipServiceWrapper;
         public rootElement: d3.Selection<SVGElement>;
         public errorDiv: d3.Selection<SVGElement>;
@@ -184,10 +196,10 @@ module powerbi.extensibility.visual {
             y: number
         };
         public SVG_SIZE:
-        {
-            w: number,
-            h: number
-        };
+            {
+                w: number,
+                h: number
+            };
         public MARGINS: {
             left: number,
             right: number,
@@ -203,7 +215,7 @@ module powerbi.extensibility.visual {
         public formatter: utils.formatting.IValueFormatter;
         private host: IVisualHost;
 
-        public static getDefaultData(): IStackViewModel {
+        public static GETDEFAULTDATA(): IStackViewModel {
             return {
                 data: [{}],
                 toolTipInfo: [],
@@ -240,13 +252,13 @@ module powerbi.extensibility.visual {
         //First time it will be called and made the structure of your visual
         constructor(options: VisualConstructorOptions) {
             //Create the SVG MainDivision
+            this.events = options.host.eventService;
             this.host = options.host;
             this.tooltipServiceWrapper = createTooltipServiceWrapper(this.host.tooltipService, options.element);
             this.rootElement = d3.select(options.element)
                 .append('div')
                 .classed('stock_Container', true);
             this.errorDiv = this.rootElement.append('div').classed('StockChartError', true);
-
             this.groupLegends = this.rootElement
                 .append('div')
                 .classed('stock_legends', true);
@@ -257,6 +269,8 @@ module powerbi.extensibility.visual {
                 .append('svg')
                 .classed('linearSVG', true)
                 .style('overflow', 'visible');
+            
+            
             this.toolTipInfo = [{ displayName: '', value: '' }];
             this.MARGINS = { top: 10, left: 45, bottom: 40, right: 35 };
             this.ORIGIN_COORD = { x: this.MARGINS.left, y: 480 };
@@ -275,7 +289,7 @@ module powerbi.extensibility.visual {
             width = viewport.width;
 
             // tslint:disable-next-line:no-any
-            let yAxisLabel: any = d3.max(this.values.data.map(function (d: Object): any { return d[highLiteral]; }));
+            let yAxisLabel: any = d3.max(this.values.data.map((d: Object): any => { return d[highLiteral]; }));
             if ((this.values && this.values.displayUnits) && this.values.displayUnits > 1) {
                 // tslint:disable-next-line:no-any
                 let formatter: any;
@@ -326,9 +340,9 @@ module powerbi.extensibility.visual {
         //Convert the dataview into its view model
         //All the variable will be populated with the value we have passed
         // tslint:disable-next-line:cyclomatic-complexity
-        public static converter(dataView: DataView): IStackViewModel {
+        public static CONVERTER(dataView: DataView): IStackViewModel {
             let resultSet: IStackViewModel;
-            resultSet = StockChart.getDefaultData();
+            resultSet = StockChart.GETDEFAULTDATA();
             resultSet.data.length = 0;
             if (dataView && dataView.categorical &&
                 dataView.categorical.values && (dataView.categorical.values.length === 4) && (dataView.categorical.categories)) {
@@ -394,21 +408,82 @@ module powerbi.extensibility.visual {
                     }
                 }
             } else {
-                return this.getDefaultData();
+                return this.GETDEFAULTDATA();
             }
 
             return resultSet;
         }
 
+        private createScale(viewModel: IStackViewModel, dateParseFormat: d3.time.Format, ticksCount: number, svgcontainer: d3.Selection<SVGElement>, yearFormat: d3.time.Format, dateFormat: d3.time.Format) {
+            
+            let maxDate: any = new Date(viewModel.data[0][dateLiteral]);
+            let minDate: any = new Date(viewModel.data[0][dateLiteral]);
+            let diffDays: number = 0;
+            let sKey: string;
+            let date1: Date;
+            for (sKey of Object.keys(viewModel.data)) {
+                if (viewModel.data.hasOwnProperty(sKey)) {
+                    date1 = new Date(viewModel.data[sKey][dateLiteral]);
+                    if (maxDate < date1) {
+                        maxDate = date1;
+                    }
+                    if (minDate > date1) {
+                        minDate = date1;
+                    }
+                }
+            }
+            if ((maxDate - minDate) === 0) {
+                if (viewModel.IsGrouped) {
+                    maxDate = dateParseFormat
+                        .parse(`${(parseInt(viewModel.data[0][dateLiteral].substr('0,4'), 10) + 1)}-01-01`);
+                    minDate = dateParseFormat
+                        .parse(`${(parseInt(viewModel.data[0][dateLiteral].substr('0,4'), 10) - 1)}-01-01`);
+                } else {
+                    minDate = maxDate = dateParseFormat.parse(viewModel.data[0][dateLiteral]);
+                    maxDate = powerbi.extensibility.utils.formatting.dateUtils.addDays(maxDate, 7);
+                    minDate = powerbi.extensibility.utils.formatting.dateUtils.addDays(minDate, -7);
+                }
+            }
+            const hour: number = 24;
+            const milisec: number = 1000;
+            const minutes: number = 60;
+            const sec: number = 60;
+            diffDays = (maxDate - minDate) / (milisec * hour * minutes * sec);
+            let xScale: d3.time.Scale<number, number>;
+            xScale = d3.time.scale()
+                .range([0, this.SVG_SIZE.w])
+                .domain([minDate, maxDate]);
+            let arr: Date[];
+            arr = [];
+            let newDate: Date = new Date();
+            newDate = minDate;
+            newDate = new Date(newDate.setDate(newDate.getDate()));
+            arr.push(new Date(newDate.toString()));
+            for (let count: number = 1; count < ticksCount; count++) {
+                newDate = new Date(newDate.setDate(newDate.getDate() + Math.ceil(diffDays / ticksCount)));
+                arr.push(new Date(newDate.toString()));
+            }
+            if (this.MARGINS) {
+                let xAxisGroup: d3.Selection<SVGElement>;
+                xAxisGroup = svgcontainer.append('g')
+                    .call(
+                        d3.svg.axis()
+                            .scale(xScale)
+                            .tickValues(arr)
+                            .tickSize(0)
+                            .orient('bottom')
+                            .tickFormat(viewModel.IsGrouped ? yearFormat : dateFormat)
+                            .tickPadding(12)
+                    )
+                    .classed('Stock_xaxis', true)
+                    .attr('transform', `translate(${this.MARGINS.left},${this.SVG_SIZE.h + this.MARGINS.top + 2})`);
+            }
+        }
         public createAxis(viewModel: IStackViewModel, options: VisualUpdateOptions): void {
-            let dateParseFormat: d3.time.Format;
-            dateParseFormat = d3.time.format('%Y-%m-%d');
-            let dateFormat: d3.time.Format;
-            dateFormat = d3.time.format('%d-%b-%y');
-            let yearFormat: d3.time.Format;
-            yearFormat = d3.time.format('%Y');
-            let svgcontainer: d3.Selection<SVGElement>;
-            svgcontainer = this.svg;
+            let dateParseFormat: d3.time.Format = d3.time.format('%Y-%m-%d');
+            let dateFormat: d3.time.Format = d3.time.format('%d-%b-%y');
+            let yearFormat: d3.time.Format = d3.time.format('%Y');
+            let svgcontainer: d3.Selection<SVGElement> = this.svg;
             const divideScale: number = 75;
             let ticksCount: number = Math.ceil(this.SVG_SIZE.h / divideScale);
             const divideTick: number = 130;
@@ -418,73 +493,7 @@ module powerbi.extensibility.visual {
                 if (StockChart.isDate) {
                     ticksCount = Math.ceil(this.SVG_SIZE.w / divideTick);
                     if (viewModel && viewModel.data[0][dateLiteral]) {
-                        // tslint:disable-next-line:no-any
-                        let maxDate: any = new Date(viewModel.data[0][dateLiteral]);
-                        // tslint:disable-next-line:no-any
-                        let minDate: any = new Date(viewModel.data[0][dateLiteral]);
-                        let diffDays: number = 0;
-                        let sKey: string;
-                        let date1: Date;
-                        for (sKey in viewModel.data) {
-                            if (viewModel.data.hasOwnProperty(sKey)) {
-                                date1 = new Date(viewModel.data[sKey][dateLiteral]);
-                                if (maxDate < date1) {
-                                    maxDate = date1;
-                                }
-                                if (minDate > date1) {
-                                    minDate = date1;
-                                }
-                            }
-                        }
-                        if ((maxDate - minDate) === 0) {
-                            if (viewModel.IsGrouped) {
-                                maxDate = dateParseFormat
-                                    .parse(`${(parseInt(viewModel.data[0][dateLiteral].substr('0,4'), 10) + 1)}-01-01`);
-                                minDate = dateParseFormat
-                                    .parse(`${(parseInt(viewModel.data[0][dateLiteral].substr('0,4'), 10) - 1)}-01-01`);
-                            } else {
-                                minDate = maxDate = dateParseFormat.parse(viewModel.data[0][dateLiteral]);
-                                maxDate = powerbi.extensibility.utils.formatting.dateUtils.addDays(maxDate, 7);
-                                minDate = powerbi.extensibility.utils.formatting.dateUtils.addDays(minDate, -7);
-                            }
-                        }
-                        const hour: number = 24;
-                        const milisec: number = 1000;
-                        const minutes: number = 60;
-                        const sec: number = 60;
-                        diffDays = (maxDate - minDate) / (milisec * hour * minutes * sec);
-                        let xScale: d3.time.Scale<number, number>;
-                        xScale = d3.time.scale()
-                            .range([0, this.SVG_SIZE.w])
-                            .domain([minDate, maxDate]);
-
-                        let arr: Date[];
-                        arr = [];
-                        let newDate: Date = new Date();
-                        newDate = minDate;
-                        newDate = new Date(newDate.setDate(newDate.getDate()));
-                        arr.push(new Date(newDate.toString()));
-
-                        for (let count: number = 1; count < ticksCount; count++) {
-                            newDate = new Date(newDate.setDate(newDate.getDate() + Math.ceil(diffDays / ticksCount)));
-                            arr.push(new Date(newDate.toString()));
-                        }
-
-                        if (this.MARGINS) {
-                            let xAxisGroup: d3.Selection<SVGElement>;
-                            xAxisGroup = svgcontainer.append('g')
-                                .call(
-                                d3.svg.axis()
-                                    .scale(xScale)
-                                    .tickValues(arr)
-                                    .tickSize(0)
-                                    .orient('bottom')
-                                    .tickFormat(viewModel.IsGrouped ? yearFormat : dateFormat)
-                                    .tickPadding(12)
-                                )
-                                .classed('Stock_xaxis', true)
-                                .attr('transform', `translate(${this.MARGINS.left},${this.SVG_SIZE.h + this.MARGINS.top + 2})`);
-                        }
+                        this.createScale(viewModel, dateParseFormat, ticksCount, svgcontainer, yearFormat, dateFormat);
                     }
                 } else {
                     const adjustMargine: number = 50;
@@ -495,11 +504,11 @@ module powerbi.extensibility.visual {
                         let xAxisGroup: d3.Selection<SVGElement>;
                         xAxisGroup = svgcontainer.append('g')
                             .call(
-                            d3.svg.axis()
-                                .scale(xScale)
-                                .tickSize(0)
-                                .orient('bottom')
-                                .tickPadding(12)
+                                d3.svg.axis()
+                                    .scale(xScale)
+                                    .tickSize(0)
+                                    .orient('bottom')
+                                    .tickPadding(12)
                             )
                             .classed('Stock_xaxis', true)
                             .attr('transform', `translate(${this.MARGINS.left},${this.SVG_SIZE.h + this.MARGINS.top + 2})`);
@@ -515,25 +524,18 @@ module powerbi.extensibility.visual {
                 if (ticksCount <= 1) {
                     ticksCount = 2;
                 }
-
-                // tslint:disable-next-line:no-any
-                let lowestValue: any = d3.min(viewModel.data.map(function (d: Object): any { return d[lowLiteral]; }));
-                // tslint:disable-next-line:no-any
-                let highestValue: any = d3.max(viewModel.data.map(function (d: Object): any { return d[highLiteral]; }));
-
+                let lowestValue: any = d3.min(viewModel.data.map((d: Object): any => { return d[lowLiteral]; }));
+                let highestValue: any = d3.max(viewModel.data.map((d: Object): any => { return d[highLiteral]; }));
                 let difference: number;
                 difference = highestValue - lowestValue;
-
                 lowestValue = lowestValue - difference * 0.1;      //0.1 for adding extra 10% vertical space
                 highestValue = highestValue + difference * 0.1;      //0.1 for adding extra 10% vertical space
-
                 lowestValue = lowestValue - (lowestValue % 5);      //rounding off value to nearest multiple of 5
                 highestValue = highestValue + (5 - (highestValue % 5));       //rounding off value to nearest multiple of 5
                 let yScale: d3.scale.Linear<number, number>;
                 yScale = d3.scale.linear()
                     .domain([lowestValue, highestValue])
                     .range([this.SVG_SIZE.h - 1, 0]);
-
                 if (this.MARGINS) {
                     let yAxisGroup: d3.Selection<SVGElement>;
                     yAxisGroup = svgcontainer.append('g')
@@ -559,186 +561,317 @@ module powerbi.extensibility.visual {
                 // empty
             }
         }
+        private stack(objects: DataViewObjects) {
+            this.values.Low_HighIndicator = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.dataColors.LowHighDataColor, this.values.Low_HighIndicator);
+            this.values.IncreasingTrend = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.dataColors.OpenCloseDataColor, this.values.IncreasingTrend);
+            this.values.DecreasingTrend = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.dataColors.LossPriceColor, this.values.DecreasingTrend);
+            this.values.fontSize = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.dataLabels.fontSize, this.values.fontSize);
+            this.values.fontColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.dataLabels.fontColor, this.values.fontColor);
+            this.values.fontFamily = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.dataLabels.fontFamily, this.values.fontFamily);
+            this.values.hasLegend = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.legends.show, this.values.hasLegend);
+            this.values.labelColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.legends.labelColor, this.values.labelColor);
+            this.values.hasTrend = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.trends.hasTrend, this.values.hasTrend);
+            this.values.TrendLine = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.trends.TrendLineColor, this.values.TrendLine);
+            this.values.hasYAxis = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.yAxis.hasYAxis, this.values.hasYAxis);
+            this.values.hasXAxis = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.xAxis.hasXAxis, this.values.hasXAxis);
+            this.values.yaxisColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.yAxis.yaxisColor, this.values.yaxisColor);
+            this.values.xaxisColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.xAxis.xaxisColor, this.values.xaxisColor);
+            this.values.hasBorder = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.stockBorder.hasBorder, this.values.hasBorder);
+            this.values.borderColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
+                objects, stockProps.stockBorder.borderColor, this.values.borderColor);
+            this.values.displayUnits = powerbi.extensibility.utils.dataview.DataViewObjects.getValue<number>(
+                objects, stockProps.yAxis.displayUnits, this.values.displayUnits);
+            this.values.trendLineWidth = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.trends.trendLineWidth, this.values.trendLineWidth);
+            this.values.textPrecision = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
+                objects, stockProps.yAxis.textPrecision, this.values.textPrecision);
+            this.values.textPrecision = this.values.textPrecision > 4 ? 4 :
+                (this.values.textPrecision < 0) ? 0 : this.values.textPrecision;
+        }
+        private label(index: number, openArray: number[], closeArray: number[]) {
+            const closeVal: string = '.closeVal';
+            const openVal: string = '.openVal';
+            const stockRect: string = '.StockRect';
+            const lastTextWidth: number = 30;
+            const index1: number = index + 1; // to get index from 1
+            const index2: number = index + 2; // to get next index
+            const padding: number = 5;
+            if (index < length) {
+                const textWidth: number = parseInt(d3.select(stockRect + (index2))
+                    .attr('x1'), 10) - parseInt(d3.select(closeVal + (index1))
+                        .attr('x'), 10) - padding;
+                d3.select(closeVal + (index1))
+                    .call(axis.LabelLayoutStrategy.clip, textWidth, textMeasurementService.svgEllipsis);
+                d3.select(openVal + (index1))
+                    .call(axis.LabelLayoutStrategy.clip, textWidth, textMeasurementService.svgEllipsis);
+            } else {
+                d3.select(closeVal + (index1))
+                    .call(axis.LabelLayoutStrategy.clip, lastTextWidth, textMeasurementService.svgEllipsis);
+                d3.select(openVal + (index1))
+                    .call(axis.LabelLayoutStrategy.clip, lastTextWidth, textMeasurementService.svgEllipsis);
+                d3.select(openVal + (index1)).append('title').text(openArray[index]);
+            }
+            d3.select(openVal + (index1)).append('title').text(openArray[index]);
+            d3.select(closeVal + (index1)).append('title').text(closeArray[index]);
+        }
 
+        private property(sDataKey, minDate, ratioDayLen, xScale1, differencePadded, xValues, viewModel, openArray, lowestValue, barNumber, arrayIndex, closeArray, point) {
+            let ob: Object; ob = viewModel.data[sDataKey]; let dtDate: any; dtDate = new Date(ob[dateLiteral]);
+            const dtDate1: any = ob[dateLiteral]; let diffDaysNew: number;
+            const hour: number = 24; const milisec: number = 1000; const minutes: number = 60; const sec: number = 60;
+            diffDaysNew = (dtDate - minDate) / (milisec * sec * minutes * hour); let x: number;
+            if (StockChart.isDate) { x = this.ORIGIN_COORD.x + (diffDaysNew * ratioDayLen); }
+            else { x = this.ORIGIN_COORD.x + xScale1(viewModel.data[sDataKey][`date`]); } let low: any;
+            low = viewModel.data[sDataKey][lowLiteral]; let high: any;
+            high = viewModel.data[sDataKey][highLiteral]; let open: any;
+            open = viewModel.data[sDataKey][openLiteral]; let close: any;
+            close = viewModel.data[sDataKey][closeLiteral];
+            //creating stocklines
+            let diffCloseOpen1: number; diffCloseOpen1 = high - low; let bottom1: number;
+            bottom1 = ((low * this.SVG_SIZE.h) / differencePadded) - ((lowestValue * this.SVG_SIZE.h) / differencePadded);
+            let diffCloseOpen: number = (this.SVG_SIZE.h * diffCloseOpen1) / differencePadded;
+            let bottom: number; bottom = this.ORIGIN_COORD.y - bottom1;
+            let line: d3.Selection<SVGElement>; line = this.svg
+                .append('line').classed('Stock_line', true)
+                .attr({ x1: x, x2: x, y1: (bottom - diffCloseOpen), y2: bottom })
+                .style({ 'stroke-width': '2px', stroke: this.values.Low_HighIndicator });
+            diffCloseOpen = close - open; let bottom2: number;
+            bottom2 = (open * this.SVG_SIZE.h) / differencePadded - ((lowestValue * this.SVG_SIZE.h) / differencePadded); let diffCloseOpenNew: number;
+            diffCloseOpenNew = (this.SVG_SIZE.h * diffCloseOpen) / differencePadded;
+            let bottomNew: number; bottomNew = this.ORIGIN_COORD.y - bottom2;
+            let rect: d3.Selection<SVGElement>; const stockRect: string = 'StockRect';
+            let y1: number = (bottomNew - diffCloseOpenNew); const y2: number = bottomNew;
+            // set y co-ordinates depending on the bar size
+            if (close >= open) { if ((y2 - y1) < 1) { y1 = y1 - 1; } }
+            let yCloseText: number = y1;
+            if (y2 - y1 < 20) { yCloseText = yCloseText - 10; }
+            rect = this.svg
+                .append('line')
+                .classed('Stock_rectangle', true).classed(stockRect + barNumber, true)
+                .attr({ x1: x, x2: x, y1: y1, y2: bottomNew })
+                .style({ 'stroke-width': '6px', stroke: this.values.IncreasingTrend });
+            let openTextValue: any; const openVal: string = 'openVal'; const closeVal: string = 'closeVal';
+            const adjustOpenX: number = 5; const adjustOpenY: number = 2;
+            openTextValue = powerbi.extensibility.utils.formatting.valueFormatter
+                .create({ format: viewModel.format[openLiteral] }).format(Number(open.toFixed(2)));
+            this.svg.append('text').attr({
+                x: x + adjustOpenX, y: bottomNew - adjustOpenY, fill: this.values.fontColor, 'font-size': this.values.fontSize, 'font-family': this.values.fontFamily
+            })
+                .text(openTextValue)
+                .classed('stockValuesOpen', true).classed(openVal + barNumber, true);
+            xValues.push(x); openArray[arrayIndex] = openTextValue;
+            let closeTextValue: any; const adjustClose: number = 5;
+            //closeTextValue
+            closeTextValue = powerbi.extensibility.utils.formatting.valueFormatter
+                .create({ format: viewModel.format[closeLiteral] }).format(Number(close.toFixed(2)));
+            this.svg.append('text').attr({
+                x: x + adjustClose, y: yCloseText - adjustClose, fill: this.values.fontColor,
+                'font-size': this.values.fontSize, 'font-family': this.values.fontFamily
+            })
+                .text(closeTextValue)
+                .classed('stockValuesClose', true)
+                .classed(closeVal + barNumber, true);
+            closeArray[arrayIndex] = closeTextValue;
+            arrayIndex++; let y: number; y = bottomNew - diffCloseOpenNew;
+            point.push({ x, y });
+            if (this.values) {
+                // Trend line width range
+                if (this.values.hasTrend) {
+                    this.values.trendLineWidth = this.values.trendLineWidth < 0 ? 0 : (this.values.trendLineWidth > 5 ? 5 : this.values.trendLineWidth);
+                }
+                // Precision range
+                if (this.values.hasYAxis) {
+                    this.values.textPrecision = (this.values.hasYAxis ? ((this.values.textPrecision > 4) ? 4 : (this.values.textPrecision < 0) ? 0 : this.values.textPrecision) : 0);
+                }
+                this.formatter = powerbi.extensibility.utils.formatting.valueFormatter
+                    .create({ format: '0', value: this.values.displayUnits, precision: this.values.textPrecision });
+            }
+            if (open > close) { rect.style({ stroke: this.values.DecreasingTrend }); }
+            let lowNew: any = viewModel.data[sDataKey][lowLiteral]; let highNew: any = viewModel.data[sDataKey][highLiteral];
+            let openNew: any = viewModel.data[sDataKey][openLiteral]; let closeNew: any;
+            closeNew = viewModel.data[sDataKey][closeLiteral]; let dateNew: any;
+            dateNew = viewModel.data[sDataKey][dateLiteral];
+            let toolTipInfoNew: { displayName: string, value: string }[];
+            toolTipInfoNew = [];
+            let parseDate: (input: string) => Date; parseDate = d3.time.format('%Y-%m-%d').parse;
+            let formatDate: d3.time.Format; formatDate = d3.time.format('%d-%b-%y');
+            if (StockChart.isDate) {
+                toolTipInfoNew.push({
+                    displayName: viewModel.IsGrouped ? 'Year' : 'Date', value: viewModel.IsGrouped ? dateNew.substr(0, 4) : formatDate(parseDate(dateNew)).toString()
+                });
+            } else {
+                toolTipInfoNew.push({ displayName: 'Category', value: dateNew });
+            }
+            lowNew = powerbi.extensibility.utils.formatting.valueFormatter.create({ format: viewModel.format[lowLiteral] }).format(lowNew);
+            highNew = powerbi.extensibility.utils.formatting.valueFormatter.create({ format: viewModel.format[highLiteral] }).format(highNew);
+            openNew = powerbi.extensibility.utils.formatting.valueFormatter
+                .create({ format: viewModel.format[openLiteral] }).format(openNew);
+            closeNew = powerbi.extensibility.utils.formatting.valueFormatter.create({ format: viewModel.format[closeLiteral] }).format(close);
+            toolTipInfoNew.push({ displayName: 'low', value: lowNew });
+            toolTipInfoNew.push({ displayName: 'high', value: highNew }); toolTipInfoNew.push({ displayName: 'open', value: openNew });
+            toolTipInfoNew.push({ displayName: 'close', value: closeNew }); line[0][0]['cust-tooltip'] = rect[0][0]['cust-tooltip'] = toolTipInfoNew;
+        }
+
+        private trend(point: any) {
+            this.svg.append('rect')
+                .classed('svgFrame', true)
+                .attr('x', this.ORIGIN_COORD.x - 8)
+                .attr('y', 0)
+                .attr('height', this.SVG_SIZE.h + 9 < 0 ? 0 : this.SVG_SIZE.h + 9)
+                .attr('width', this.SVG_SIZE.w + 16 < 0 ? 0 : this.SVG_SIZE.w + 16)
+                .style('stroke', this.values.borderColor)
+                .style('fill', 'none')
+                .style('stroke-width', '1px')
+                .style('display', this.values.hasBorder ? 'block' : 'none');
+            // Trend Line
+            if (point) {
+                let d3line2: d3.svg.Line<[number, number]>;
+                const xLiteral: string = 'x';
+                const yLiteral: string = 'y';
+                d3line2 = d3.svg.line()
+                    .x((d: [number, number]): any => { return d[xLiteral]; })
+                    .y((d: [number, number]): any => { return d[yLiteral]; });
+                this.svg.append('svg:path').classed('trend_Line', true)
+                    .attr('d', d3line2(point))
+                    .style('stroke-width', this.values.trendLineWidth)
+                    .style('stroke', this.values.TrendLine)
+                    .style('fill', 'none');
+            }
+        }
+        //format 
+        private format(options: VisualUpdateOptions) {
+            let legendsLowHighBlock: d3.Selection<SVGElement>;
+            legendsLowHighBlock = this.groupLegends
+                .append('div').attr('title', this.values.legendName)
+                .classed('legendsLowHighBlock', true);
+            let textPropertiesLegenName: powerbi.extensibility.utils.formatting.TextProperties;
+            textPropertiesLegenName = {
+                text: this.values.legendName, fontFamily: 'Segoe UI', fontSize: `${this.values.legendTextSize}px`
+            };
+            let textPropertiesLegendName2: powerbi.extensibility.utils.formatting.TextProperties;
+            textPropertiesLegendName2 = {
+                text: this.values.legendName2, fontFamily: 'Segoe UI', fontSize: `${this.values.legendTextSize}px`
+            };
+            let title: d3.Selection<SVGElement>;
+            title = legendsLowHighBlock
+                .append('div')
+                .classed('title', true)
+                .classed('text', true)
+                .style('font-size', `${this.values.legendTextSize}px`)
+                .style('color', this.values.labelColor)
+                .text(powerbi.extensibility.utils.formatting.textMeasurementService
+                    .getTailoredTextOrDefault(textPropertiesLegenName, (options.viewport.width * 20) / 100));
+            legendsLowHighBlock
+                .append('div')
+                .classed('legend', true)
+                .style('width', this.values.Low_HighIndicator)
+                .style('height', this.values.Low_HighIndicator)
+                .style('border-left', '8px solid transparent')
+                .style('border-right', '8px solid transparent')
+                .style('border-bottom', '8px solid')
+                .style('border-bottom-color', this.values.IncreasingTrend);
+            let legendsOpenCloseBlock: d3.Selection<SVGElement>;
+            legendsOpenCloseBlock = this.groupLegends
+                .append('div').attr('title', this.values.legendName2)
+                .classed('legendsOpenCloseBlock', true)
+                .style('display', 'inline-block');
+            let textopen: d3.Selection<SVGElement>;
+            const divider: number = 100;
+            const multiplier: number = 20;
+            textopen = legendsOpenCloseBlock
+                .append('div')
+                .classed('title', true)
+                .classed('text', true)
+                .style('font-size', `${this.values.legendTextSize}px`)
+                .style('color', this.values.labelColor)
+                .text(powerbi.extensibility.utils.formatting.textMeasurementService
+                    .getTailoredTextOrDefault(textPropertiesLegendName2, (options.viewport.width * multiplier) / divider));
+            legendsOpenCloseBlock
+                .append('div')
+                .classed('legend', true)
+                .style('right', '-35px')
+                .style('width', this.values.Low_HighIndicator)
+                .style('height', this.values.Low_HighIndicator)
+                .style('border-left', '8px solid transparent')
+                .style('border-right', '8px solid transparent')
+                .style('border-top', '8px solid')
+                .style('border-top-color', this.values.DecreasingTrend);
+            this.rootElement.selectAll('.stock_legends').style({
+                display: this.values.hasLegend ? 'block' : 'none'
+            });
+        }
+        private html() {
+            if (this.values.hasYAxis && this.svg.select('g.Stock_yaxis')[0][0]) {
+                this.rootElement.selectAll('g.Stock_yaxis').style('display', 'initial');
+                let tc: HTMLElement; tc = <HTMLElement>this.svg.select('g.Stock_yaxis')[0][0];
+                let iValue: number; iValue = tc.getBoundingClientRect().width;
+                this.svg.style('position', 'relative'); this.svg.style('left', `${iValue / 2}px`);
+            } else { this.rootElement.selectAll('g.Stock_yaxis').style('display', 'none'); }
+        }
         //Drawing the visual
         // tslint:disable-next-line:cyclomatic-complexity
+        public errorMsg(dataView,options)
+        {
+            if (dataView.categorical.values === undefined || dataView.categorical.values.length < 4 || dataView.categorical.categories === undefined) {
+                this.chart.style('margin-left','40%');
+                this.chart.style('margin-top',(options.viewport.height/2).toString()+'px');
+                this.svg.append('text').text('Please insert data for all fields')
+            }
+            else
+            {
+                this.chart.style('margin-top','10px');
+                this.chart.style('margin-left','0px');
+            }
+        }
         public update(options: VisualUpdateOptions): void {
+            this.events.renderingStarted(options);
             this.svg.select('.svgFrame').remove();
             this.groupLegends.selectAll('div').remove();
             this.svg.selectAll('g').remove();
             this.svg.selectAll('path').remove();
             this.svg.selectAll('line').remove();
             this.svg.selectAll('text').remove();
-
-            let self: this;
-            self = this;
-            let dataView: DataView;
-            dataView = this.dataView = options.dataViews[0];
-
+            let self: this = this;
+            let dataView: DataView = this.dataView = options.dataViews[0];
             // If columns are not dragged to all fields, display message
-            if (dataView.categorical.values === undefined || dataView.categorical.values.length < 4
-                || dataView.categorical.categories === undefined) {
-                this.svg.append('text').text('Please insert data for all fields');
-            }
-
-            let viewModel: IStackViewModel;
-            viewModel = this.values = StockChart.converter(dataView);
-            let objects: DataViewObjects;
-            objects = null;
-            // tslint:disable-next-line:no-any
-            let point: any;
-            point = [];
-            if (dataView && dataView.metadata) {
-                objects = dataView.metadata.objects;
-            }
-            if (objects) {
-                this.values.Low_HighIndicator = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.dataColors.LowHighDataColor, this.values.Low_HighIndicator);
-                this.values.IncreasingTrend = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.dataColors.OpenCloseDataColor, this.values.IncreasingTrend);
-                this.values.DecreasingTrend = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.dataColors.LossPriceColor, this.values.DecreasingTrend);
-                this.values.fontSize = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.dataLabels.fontSize, this.values.fontSize);
-                this.values.fontColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.dataLabels.fontColor, this.values.fontColor);
-                this.values.fontFamily = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.dataLabels.fontFamily, this.values.fontFamily);
-                this.values.hasLegend = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.legends.show, this.values.hasLegend);
-                this.values.labelColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.legends.labelColor, this.values.labelColor);
-                this.values.hasTrend = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.trends.hasTrend, this.values.hasTrend);
-                this.values.TrendLine = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.trends.TrendLineColor, this.values.TrendLine);
-                this.values.hasYAxis = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.yAxis.hasYAxis, this.values.hasYAxis);
-                this.values.hasXAxis = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.xAxis.hasXAxis, this.values.hasXAxis);
-                this.values.yaxisColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.yAxis.yaxisColor, this.values.yaxisColor);
-                this.values.xaxisColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.xAxis.xaxisColor, this.values.xaxisColor);
-                this.values.hasBorder = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.stockBorder.hasBorder, this.values.hasBorder);
-                this.values.borderColor = powerbi.extensibility.utils.dataview.DataViewObjects.getFillColor(
-                    objects, stockProps.stockBorder.borderColor, this.values.borderColor);
-                this.values.displayUnits = powerbi.extensibility.utils.dataview.DataViewObjects.getValue<number>(
-                    objects, stockProps.yAxis.displayUnits, this.values.displayUnits);
-                this.values.trendLineWidth = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.trends.trendLineWidth, this.values.trendLineWidth);
-                this.values.textPrecision = powerbi.extensibility.utils.dataview.DataViewObjects.getValue(
-                    objects, stockProps.yAxis.textPrecision, this.values.textPrecision);
-                this.values.textPrecision = this.values.textPrecision > 4 ? 4 :
-                    (this.values.textPrecision < 0) ? 0 : this.values.textPrecision;
-            }
-
+            this.errorMsg(dataView,options);
+            //this.svg.append('text').text(this.missingField(dataView));
+            let viewModel: IStackViewModel; let objects: DataViewObjects;
+            viewModel = this.values = StockChart.CONVERTER(dataView);
+            objects = null; let point: any; point = [];
+            if (dataView && dataView.metadata) { objects = dataView.metadata.objects; }
+            if (objects) { this.stack(objects); }
             this.errorDiv.selectAll('span').remove();
             if (viewModel && viewModel.data[0] && viewModel.data[0][dateLiteral]) {
-
-                let legendsLowHighBlock: d3.Selection<SVGElement>;
-                legendsLowHighBlock = this.groupLegends
-                    .append('div').attr('title', this.values.legendName)
-                    .classed('legendsLowHighBlock', true);
-
-                let textPropertiesLegenName: powerbi.extensibility.utils.formatting.TextProperties;
-                textPropertiesLegenName = {
-                    text: this.values.legendName,
-                    fontFamily: 'Segoe UI',
-                    fontSize: `${this.values.legendTextSize}px`
-                };
-
-                let textPropertiesLegendName2: powerbi.extensibility.utils.formatting.TextProperties;
-                textPropertiesLegendName2 = {
-                    text: this.values.legendName2,
-                    fontFamily: 'Segoe UI',
-                    fontSize: `${this.values.legendTextSize}px`
-                };
-
-                let title: d3.Selection<SVGElement>;
-                title = legendsLowHighBlock
-                    .append('div')
-                    .classed('title', true)
-                    .classed('text', true)
-                    .style('font-size', `${this.values.legendTextSize}px`)
-                    .style('color', this.values.labelColor)
-                    .text(powerbi.extensibility.utils.formatting.textMeasurementService
-                        .getTailoredTextOrDefault(textPropertiesLegenName, (options.viewport.width * 20) / 100));
-
-                legendsLowHighBlock
-                    .append('div')
-                    .classed('legend', true)
-                    .style('width', this.values.Low_HighIndicator)
-                    .style('height', this.values.Low_HighIndicator)
-                    .style('border-left', '8px solid transparent')
-                    .style('border-right', '8px solid transparent')
-                    .style('border-bottom', '8px solid')
-                    .style('border-bottom-color', this.values.IncreasingTrend);
-
-                let legendsOpenCloseBlock: d3.Selection<SVGElement>;
-                legendsOpenCloseBlock = this.groupLegends
-                    .append('div').attr('title', this.values.legendName2)
-                    .classed('legendsOpenCloseBlock', true)
-                    .style('display', 'inline-block');
-
-                let textopen: d3.Selection<SVGElement>;
-                const divider: number = 100;
-                const multiplier: number = 20;
-                textopen = legendsOpenCloseBlock
-                    .append('div')
-                    .classed('title', true)
-                    .classed('text', true)
-                    .style('font-size', `${this.values.legendTextSize}px`)
-                    .style('color', this.values.labelColor)
-                    .text(powerbi.extensibility.utils.formatting.textMeasurementService
-                        .getTailoredTextOrDefault(textPropertiesLegendName2, (options.viewport.width * multiplier) / divider));
-
-                legendsOpenCloseBlock
-                    .append('div')
-                    .classed('legend', true)
-                    .style('right', '-35px')
-                    .style('width', this.values.Low_HighIndicator)
-                    .style('height', this.values.Low_HighIndicator)
-                    .style('border-left', '8px solid transparent')
-                    .style('border-right', '8px solid transparent')
-                    .style('border-top', '8px solid')
-                    .style('border-top-color', this.values.DecreasingTrend);
-
-                this.rootElement.selectAll('.stock_legends').style({
-                    display: this.values.hasLegend ? 'block' : 'none'
-                });
-
-                this.updateZoom(options);
+                this.format(options); this.updateZoom(options);
                 this.createAxis(viewModel, options);
-                const openArray: number[] = [];
-                const closeArray: number[] = [];
-                let arrayIndex: number = 0;
+                const openArray: number[] = []; const closeArray: number[] = []; let arrayIndex: number = 0;
                 if (viewModel && viewModel.data[0]) {
-                    // tslint:disable-next-line:no-any
-                    let maxDate: any = new Date(viewModel.data[0][dateLiteral]);
-                    // tslint:disable-next-line:no-any
-                    let minDate: any = new Date(viewModel.data[0][dateLiteral]);
-                    let days: number = 0;
-                    // tslint:disable-next-line:no-any
-                    let ratioDayLen: any;
-                    let sKeyDataSet: string;
-                    for (sKeyDataSet in viewModel.data) {
+                    let maxDate: any = new Date(viewModel.data[0][dateLiteral]), minDate: any = new Date(viewModel.data[0][dateLiteral]),days: number = 0; let ratioDayLen: any; let sKeyDataSet: string;
+                    for (sKeyDataSet of Object.keys(viewModel.data)) {
                         if (viewModel.data.hasOwnProperty(sKeyDataSet)) {
-                            let date: Date;
-                            date = new Date(viewModel.data[sKeyDataSet][dateLiteral]);
-                            if (maxDate < date) {
-                                maxDate = date;
-                            }
-                            if (minDate > date) {
-                                minDate = date;
-                            }
+                            let date: Date; date = new Date(viewModel.data[sKeyDataSet][dateLiteral]);
+                            if (maxDate < date) { maxDate = date; }
+                            if (minDate > date) { minDate = date; }
                         }
                     }
-
                     if ((maxDate - minDate) === 0) {
-                        let dateParseFormat: d3.time.Format;
-                        dateParseFormat = d3.time.format('%Y-%m-%d');
+                        let dateParseFormat: d3.time.Format; dateParseFormat = d3.time.format('%Y-%m-%d');
                         if (viewModel && viewModel.data[0] && viewModel.IsGrouped) {
                             maxDate = dateParseFormat.parse(`${(parseInt(viewModel.data[0][dateLiteral].substr('0,4'), 10) + 1)}-01-01`);
                             minDate = dateParseFormat.parse(`${(parseInt(viewModel.data[0][dateLiteral].substr('0,4'), 10) - 1)}-01-01`);
@@ -751,345 +884,53 @@ module powerbi.extensibility.visual {
                     const increaseDays: number = 50;
                     days = (maxDate - minDate) / (1000 * 60 * 60 * 24);
                     ratioDayLen = (this.SVG_SIZE.w - increaseDays) / (days ? days : 1);
-
-                    // tslint:disable-next-line:no-any
-                    let lowestValue: any = d3.min(viewModel.data.map(function (d: Object): any { return d[lowLiteral]; }));
-                    // tslint:disable-next-line:no-any
-                    let highestValue: any = d3.max(viewModel.data.map(function (d: Object): any { return d[highLiteral]; }));
-
-                    let difference: number;
-                    difference = highestValue - lowestValue;   //Getting the difference, MaxVal - MinVal
-
+                    let lowestValue: any = d3.min(viewModel.data.map((d: Object): any => { return d[lowLiteral]; }));
+                    let highestValue: any = d3.max(viewModel.data.map((d: Object): any => { return d[highLiteral]; })), difference: number; difference = highestValue - lowestValue;
                     lowestValue = lowestValue - difference * 0.1;      //0.1 for adding extra 10% vertical space
                     highestValue = highestValue + difference * 0.1;      //0.1 for adding extra 10% vertical space
-
                     lowestValue = lowestValue - (lowestValue % 5);      //rounding off value to nearest multiple of 5
                     highestValue = highestValue + (5 - (highestValue % 5));       //rounding off value to nearest multiple of 5
-                    let differencePadded: number;
-                    differencePadded = highestValue - lowestValue;
+                    let differencePadded: number; differencePadded = highestValue - lowestValue;
                     const xScale1: d3.scale.Ordinal<string, number> = d3.scale.ordinal()
                         .domain(viewModel.data.map((d: Object) => d[`date`]))
                         .rangePoints([0, options.viewport.width - this.MARGINS.left - this.MARGINS.right - 50]);
-                    let sDataKey: string;
-                    let barNumber: number;
-                    barNumber = 1;
-                    // tslint:disable-next-line:no-any
-                    const xValues: number[] = [];
-                    for (sDataKey in viewModel.data) {
-                        if (viewModel.data.hasOwnProperty(sDataKey)) {
-                            let ob: Object;
-                            ob = viewModel.data[sDataKey];
-                            // tslint:disable-next-line:no-any
-                            let dtDate: any;
-                            dtDate = new Date(ob[dateLiteral]);
-                            // tslint:disable-next-line:no-any
-                            const dtDate1: any = ob[dateLiteral];
-                            let diffDaysNew: number;
-                            const hour: number = 24;
-                            const milisec: number = 1000;
-                            const minutes: number = 60;
-                            const sec: number = 60;
-                            diffDaysNew = (dtDate - minDate) / (milisec * sec * minutes * hour);
-                            // tslint:disable-next-line:no-any
-                            let x: number;
-                            if (StockChart.isDate) {
-                                x = this.ORIGIN_COORD.x + (diffDaysNew * ratioDayLen);
-                            } else {
-                                x = this.ORIGIN_COORD.x + xScale1(viewModel.data[sDataKey][`date`]);
-                            }
-                            // tslint:disable-next-line:no-any
-                            let low: any;
-                            low = viewModel.data[sDataKey][lowLiteral];
-                            // tslint:disable-next-line:no-any
-                            let high: any;
-                            high = viewModel.data[sDataKey][highLiteral];
-                            // tslint:disable-next-line:no-any
-                            let open: any;
-                            open = viewModel.data[sDataKey][openLiteral];
-                            // tslint:disable-next-line:no-any
-                            let close: any;
-                            close = viewModel.data[sDataKey][closeLiteral];
-
-                            //creating stocklines
-                            let diffCloseOpen1: number;
-                            diffCloseOpen1 = high - low;
-                            let bottom1: number;
-                            bottom1 = ((low * this.SVG_SIZE.h) / differencePadded) - ((lowestValue * this.SVG_SIZE.h) / differencePadded);
-                            let diffCloseOpen: number = (this.SVG_SIZE.h * diffCloseOpen1) / differencePadded;
-                            let bottom: number;
-                            bottom = this.ORIGIN_COORD.y - bottom1;
-                            let line: d3.Selection<SVGElement>;
-                            line = this.svg
-                                .append('line')
-                                .classed('Stock_line', true)
-                                .attr({
-                                    x1: x,
-                                    x2: x,
-                                    y1: (bottom - diffCloseOpen),
-                                    y2: bottom
-                                })
-                                .style({
-                                    'stroke-width': '2px',
-                                    stroke: this.values.Low_HighIndicator
-                                });
-
-                            diffCloseOpen = close - open;
-                            let bottom2: number;
-                            bottom2 = (open * this.SVG_SIZE.h) / differencePadded - ((lowestValue * this.SVG_SIZE.h) / differencePadded);
-                            let diffCloseOpenNew: number;
-                            diffCloseOpenNew = (this.SVG_SIZE.h * diffCloseOpen) / differencePadded;
-                            let bottomNew: number;
-                            bottomNew = this.ORIGIN_COORD.y - bottom2;
-                            let rect: d3.Selection<SVGElement>;
-                            const stockRect: string = 'StockRect';
-                            let y1: number = (bottomNew - diffCloseOpenNew);
-                            const y2: number = bottomNew;
-                            // set y co-ordinates depending on the bar size
-                            if (close >= open) {
-                                if ((y2 - y1) < 1) {
-                                    y1 = y1 - 1;
-                                }
-                            }
-                            let yCloseText: number = y1;
-                            if (y2 - y1 < 20) {
-                                yCloseText = yCloseText - 10;
-                            }
-                            rect = this.svg
-                                .append('line')
-                                .classed('Stock_rectangle', true)
-                                .classed(stockRect + barNumber, true)
-                                .attr({
-                                    x1: x,
-                                    x2: x,
-                                    y1: y1,
-                                    y2: bottomNew
-                                })
-                                .style({
-                                    'stroke-width': '6px',
-                                    stroke: this.values.IncreasingTrend
-                                });
-
-                            // tslint:disable-next-line:no-any
-                            let openTextValue: any;
-                            const openVal: string = 'openVal';
-                            const closeVal: string = 'closeVal';
-                            const adjustOpenX: number = 5;
-                            const adjustOpenY: number = 2;
-                            openTextValue = powerbi.extensibility.utils.formatting.valueFormatter
-                                .create({ format: viewModel.format[openLiteral] }).format(Number(open.toFixed(2)));
-                            this.svg.append('text').attr({
-                                x: x + adjustOpenX,
-                                y: bottomNew - adjustOpenY,
-                                fill: this.values.fontColor,
-                                'font-size': this.values.fontSize,
-                                'font-family': this.values.fontFamily
-                            })
-                                .text(openTextValue)
-                                .classed('stockValuesOpen', true)
-                                .classed(openVal + barNumber, true);
-                            xValues.push(x);
-                            openArray[arrayIndex] = openTextValue;
-                            // tslint:disable-next-line:no-any
-                            let closeTextValue: any;
-                            const adjustClose: number = 5;
-                            //closeTextValue
-                            closeTextValue = powerbi.extensibility.utils.formatting.valueFormatter
-                                .create({ format: viewModel.format[closeLiteral] }).format(Number(close.toFixed(2)));
-                            this.svg.append('text').attr({
-                                x: x + adjustClose,
-                                y: yCloseText - adjustClose,
-                                fill: this.values.fontColor,
-                                'font-size': this.values.fontSize,
-                                'font-family': this.values.fontFamily
-                            })
-                                .text(closeTextValue)
-                                .classed('stockValuesClose', true)
-                                .classed(closeVal + barNumber, true);
-                            closeArray[arrayIndex] = closeTextValue;
-                            arrayIndex++;
-                            let y: number;
-                            y = bottomNew - diffCloseOpenNew;
-                            point.push({ x, y });
-
-                            if (this.values) {
-                                // Trend line width range
-                                if (this.values.hasTrend) {
-                                    this.values.trendLineWidth = this.values.trendLineWidth < 0 ? 0 :
-                                        (this.values.trendLineWidth > 5 ? 5 : this.values.trendLineWidth);
-                                }
-
-                                // Precision range
-                                if (this.values.hasYAxis) {
-                                    this.values.textPrecision = (this.values.hasYAxis ? ((this.values.textPrecision > 4) ? 4 :
-                                        (this.values.textPrecision < 0) ? 0 : this.values.textPrecision) : 0);
-                                }
-
-                                this.formatter = powerbi.extensibility.utils.formatting.valueFormatter
-                                    .create({ format: '0', value: this.values.displayUnits, precision: this.values.textPrecision });
-                            }
-
-                            if (open > close) {
-                                rect.style({ stroke: this.values.DecreasingTrend });
-                            }
-
-                            // tslint:disable-next-line:no-any
-                            let lowNew: any = viewModel.data[sDataKey][lowLiteral];
-                            // tslint:disable-next-line:no-any
-                            let highNew: any = viewModel.data[sDataKey][highLiteral];
-                            // tslint:disable-next-line:no-any
-                            let openNew: any = viewModel.data[sDataKey][openLiteral];
-                            // tslint:disable-next-line:no-any
-                            let closeNew: any;
-                            closeNew = viewModel.data[sDataKey][closeLiteral];
-                            // tslint:disable-next-line:no-any
-                            let dateNew: any;
-                            dateNew = viewModel.data[sDataKey][dateLiteral];
-                            let toolTipInfoNew: {
-                                displayName: string,
-                                value: string
-                            }[];
-                            toolTipInfoNew = [];
-                            let parseDate: (input: string) => Date;
-                            parseDate = d3.time.format('%Y-%m-%d').parse;
-                            let formatDate: d3.time.Format;
-                            formatDate = d3.time.format('%d-%b-%y');
-                            if (StockChart.isDate) {
-                                toolTipInfoNew.push({
-                                    displayName: viewModel.IsGrouped ? 'Year' : 'Date'
-                                    , value: viewModel.IsGrouped ? dateNew.substr(0, 4) : formatDate(parseDate(dateNew)).toString()
-                                });
-                            } else {
-                                toolTipInfoNew.push({
-                                    displayName: 'Category',
-                                    value: dateNew
-                                });
-                            }
-                            lowNew = powerbi.extensibility.utils.formatting.valueFormatter
-                                .create({ format: viewModel.format[lowLiteral] }).format(lowNew);
-                            highNew = powerbi.extensibility.utils.formatting.valueFormatter
-                                .create({ format: viewModel.format[highLiteral] }).format(highNew);
-                            openNew = powerbi.extensibility.utils.formatting.valueFormatter
-                                .create({ format: viewModel.format[openLiteral] }).format(openNew);
-                            closeNew = powerbi.extensibility.utils.formatting.valueFormatter
-                                .create({ format: viewModel.format[closeLiteral] }).format(close);
-                            toolTipInfoNew.push({ displayName: 'low', value: lowNew });
-                            toolTipInfoNew.push({ displayName: 'high', value: highNew });
-                            toolTipInfoNew.push({ displayName: 'open', value: openNew });
-                            toolTipInfoNew.push({ displayName: 'close', value: closeNew });
-
-                            line[0][0]['cust-tooltip'] = rect[0][0]['cust-tooltip'] = toolTipInfoNew;
-                        }
+                    let sDataKey: string; let barNumber: number;
+                    barNumber = 1; const xValues: number[] = [];
+                    for (sDataKey of Object.keys(viewModel.data)) {
+                        if (viewModel.data.hasOwnProperty(sDataKey)) { this.property(sDataKey, minDate, ratioDayLen, xScale1, differencePadded, xValues, viewModel, openArray, lowestValue, barNumber, arrayIndex, closeArray, point); }
                         barNumber++;
                     }
                 }
                 const length: number = d3.selectAll('.stockValuesClose')[0].length - 1;
-                // tslint:disable-next-line:no-any
-                d3.selectAll('.stockValuesClose')[0].forEach(function (ele: any, index: number): void {
-                    const closeVal: string = '.closeVal';
-                    const openVal: string = '.openVal';
-                    const stockRect: string = '.StockRect';
-                    const lastTextWidth: number = 30;
-                    const index1: number = index + 1; // to get index from 1
-                    const index2: number = index + 2; // to get next index
-                    const padding: number = 5;
-                    if (index < length) {
-                        const textWidth: number = parseInt(d3.select(stockRect + (index2))
-                            .attr('x1'),                   10) - parseInt(d3.select(closeVal + (index1))
-                            .attr('x'),                                   10) - padding;
-                        d3.select(closeVal + (index1))
-                            .call(AxisHelper.LabelLayoutStrategy.clip, textWidth, textMeasurementService.svgEllipsis);
-                        d3.select(openVal + (index1))
-                            .call(AxisHelper.LabelLayoutStrategy.clip, textWidth, textMeasurementService.svgEllipsis);
-                    } else {
-                        d3.select(closeVal + (index1))
-                            .call(AxisHelper.LabelLayoutStrategy.clip, lastTextWidth, textMeasurementService.svgEllipsis);
-                        d3.select(openVal + (index1))
-                            .call(AxisHelper.LabelLayoutStrategy.clip, lastTextWidth, textMeasurementService.svgEllipsis);
-                        d3.select(openVal + (index1)).append('title').text(openArray[index]);
-                    }
-                    d3.select(openVal + (index1)).append('title').text(openArray[index]);
-                    d3.select(closeVal + (index1)).append('title').text(closeArray[index]);
+                d3.selectAll('.stockValuesClose')[0].forEach((ele: any, index: number): void => {
+                    this.label(index, openArray, closeArray);
                 });
-                this.svg.append('rect')
-                    .classed('svgFrame', true)
-                    .attr('x', this.ORIGIN_COORD.x - 8)
-                    .attr('y', 0)
-                    .attr('height', this.SVG_SIZE.h + 9 < 0 ? 0 : this.SVG_SIZE.h + 9)
-                    .attr('width', this.SVG_SIZE.w + 16 < 0 ? 0 : this.SVG_SIZE.w + 16)
-                    .style('stroke', this.values.borderColor)
-                    .style('fill', 'none')
-                    .style('stroke-width', '1px')
-                    .style('display', this.values.hasBorder ? 'block' : 'none');
-
-                // Trend Line
-                if (point) {
-                    let d3line2: d3.svg.Line<[number, number]>;
-                    const xLiteral: string = 'x';
-                    const yLiteral: string = 'y';
-                    d3line2 = d3.svg.line()
-                        // tslint:disable-next-line:no-any
-                        .x(function (d: [number, number]): any { return d[xLiteral]; })
-                        // tslint:disable-next-line:no-any
-                        .y(function (d: [number, number]): any { return d[yLiteral]; });
-
-                    this.svg.append('svg:path').classed('trend_Line', true)
-                        .attr('d', d3line2(point))
-                        .style('stroke-width', this.values.trendLineWidth)
-                        .style('stroke', this.values.TrendLine)
-                        .style('fill', 'none');
-                }
-                if (this.values.hasTrend === false) {
-                    this.rootElement.selectAll('.trend_Line').remove();
-                }
-
-                if (this.values.hasXAxis) {
-                    this.rootElement.selectAll('g.Stock_xaxis').style('display', 'initial');
-                } else {
-                    this.rootElement.selectAll('g.Stock_xaxis').style('display', 'none');
-                }
+                //Trend line
+                this.trend(point);
+                if (this.values.hasTrend === false) { this.rootElement.selectAll('.trend_Line').remove(); }
+                if (this.values.hasXAxis) { this.rootElement.selectAll('g.Stock_xaxis').style('display', 'initial'); }
+                else { this.rootElement.selectAll('g.Stock_xaxis').style('display', 'none'); }
                 this.rootElement.selectAll(('g.Stock_yaxis')).style('fill', this.values.yaxisColor);
                 this.rootElement.selectAll(('g.Stock_xaxis')).style('fill', this.values.xaxisColor);
-
                 // Formatting option for y-axis through capabilities
-                // Formatting the y-axis
                 if (this.rootElement.selectAll('g.Stock_yaxis>g.tick') && this.rootElement.selectAll('g.Stock_yaxis>g.tick')[0]) {
                     if ((this.values && this.values.displayUnits) && this.values.displayUnits > 1) {
-                        // tslint:disable-next-line:no-any
-                        let formatter: any;
-                        formatter = this.formatter;
-                        // tslint:disable-next-line:no-any
-                        this.rootElement.selectAll('g.Stock_yaxis>g.tick>text').each(function (d: any): void {
-                            this.textContent = formatter.format(d);
-                        });
+                        let formatter: any; formatter = this.formatter;
+                        this.rootElement.selectAll('g.Stock_yaxis>g.tick>text').each(function (d: any): void { this.textContent = formatter.format(d); });
                     } else {
-                        let precision: number;
-                        precision = this.values.textPrecision;
-                        // tslint:disable-next-line:no-any
+                        let precision: number; precision = this.values.textPrecision;
                         this.rootElement.selectAll('g.Stock_yaxis>g.tick>text').each(function (d: any): void {
                             this.textContent = d3.format(`,.${precision}f`)(d);
                         });
                     }
                 }
-
                 this.tooltipServiceWrapper.addTooltip(
-                    this.rootElement.selectAll('svg.linearSVG>*'), (tooltipEvent: TooltipEventArgs<number>) => {
-                        return tooltipEvent.context['cust-tooltip'];
-                    },
+                    this.rootElement.selectAll('svg.linearSVG>*'), (tooltipEvent: TooltipEventArgs<number>) => { return tooltipEvent.context['cust-tooltip']; },
                     (tooltipEvent: TooltipEventArgs<number>) => null, true);
-
                 // Y-Axis
-                if (this.values.hasYAxis && this.svg.select('g.Stock_yaxis')[0][0]) {
-                    this.rootElement.selectAll('g.Stock_yaxis').style('display', 'initial');
-                    let tc: HTMLElement;
-                    tc = <HTMLElement>this.svg.select('g.Stock_yaxis')[0][0];
-                    let iValue: number;
-                    iValue = tc.getBoundingClientRect().width;
-                    this.svg.style('position', 'relative');
-                    this.svg.style('left', `${iValue / 2}px`);
-                } else {
-                    this.rootElement.selectAll('g.Stock_yaxis').style('display', 'none');
-                }
+                this.html();
             }
+            this.events.renderingFinished(options);
         }
 
         // Make visual properties available in the property pane in Power BI
@@ -1098,7 +939,7 @@ module powerbi.extensibility.visual {
             let enumeration: VisualObjectInstance[];
             enumeration = [];
             if (!this.values) {
-                this.values = StockChart.getDefaultData();
+                this.values = StockChart.GETDEFAULTDATA();
             }
 
             switch (options.objectName) {
