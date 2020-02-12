@@ -189,7 +189,7 @@ module powerbi.extensibility.visual {
                 let dataView: DataView;
                 dataView = this.dataViews = options.dataViews[0];
                 let imagePatt: RegExp;
-                imagePatt = new RegExp('^https?://(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:/[^/#?]+)+\.(?:jpg|gif|png|svg)$');
+                imagePatt = new RegExp('^https?:\/\/(?:[a-z0-9\-]+\.)+[a-z]{2,6}(?:\/[^/#?]+)+\.(?:jpg|gif|png|svg)$);
                 let validImage: boolean;
                 let tooltipSettings: Itooltip;
                 tooltipSettings = this.getToolTipSettings(dataView);
